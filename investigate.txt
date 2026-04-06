@@ -1,0 +1,28 @@
+Main Functions to Address + File Locations
+
+These were all hit from InitGame in g_main.cpp:637.
+
+Memory-clear/init block (G_InitMemory, memset(level), memset(g_entities), ClearAllInUse, memset(level.clients)):
+
+Callsite/block: g_main.cpp:653
+G_InitMemory impl: g_mem.cpp
+NPC_InitGame:
+
+Callsite: g_main.cpp:696
+Implementation: NPC.cpp:2182
+IT_LoadItemParms (item/script config loader):
+
+Callsite: g_main.cpp:717
+Implementation: g_itemLoad.cpp:636
+NAV::LoadFromFile (JK2 equivalent is navigator.Load):
+
+Callsite: g_main.cpp:725
+Implementation (CNavigator::Load): g_navigator.cpp:567
+G_SpawnEntitiesFromString:
+
+Callsite: g_main.cpp:731
+Implementation: g_spawn.cpp:1558
+G_FindTeams:
+
+Callsite and implementation (same file): g_main.cpp:492
+If you want, I can also give you a ranked “optimize first” plan specifically for G_SpawnEntitiesFromString (the only hotspot that really matters from this trace).
