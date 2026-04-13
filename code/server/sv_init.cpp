@@ -194,10 +194,19 @@ Change the server to a new map, taking all connected
 clients along with it.
 ================
 */
+#include "../qcommon/load_timing.h"
+
+int sv_loadLogStartMs = 0;
+
 void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bAllowScreenDissolve )
 {
 	int			i;
 	int			checksum;
+#if LOAD_LOGGING
+	int			svt0, svt1;
+	sv_loadLogStartMs = Sys_Milliseconds();
+	{ FILE *f = fopen( "loadlog.txt", "w" ); if ( f ) { fprintf( f, "=== LOAD LOG: %s ===\n\n", server ); fclose( f ); } }
+#endif
 
 	re.RegisterMedia_LevelLoadBegin( server, eForceReload, bAllowScreenDissolve );
 
@@ -288,7 +297,15 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	sv.time = 1000;
 	re.G2API_SetTime(sv.time,G2T_SV_TIME);
 
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	CM_LoadMap( va("maps/%s.bsp", server), qfalse, &checksum, qfalse );
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "[Server]\n" );
+	LoadLog_Append( "  CM_LoadMap              : %4dms\n", svt1 - svt0 );
+#endif
 
 	// set serverinfo visible name
 	Cvar_Set( "mapname", server );
@@ -308,14 +325,28 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	sv.state = SS_LOADING;
 
 	// load and spawn all other entities
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	SV_InitGameProgs();
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  SV_InitGameProgs        : %4dms\n", svt1 - svt0 );
+#endif
 
 	// run a few frames to allow everything to settle
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	for ( i = 0 ;i < 4 ; i++ ) {
 		ge->RunFrame( sv.time );
 		sv.time += 100;
 		re.G2API_SetTime(sv.time,G2T_SV_TIME);
 	}
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  settle frames (x4)      : %4dms\n", svt1 - svt0 );
+#endif
 #ifndef JK2_MODE
 	ge->ConnectNavs(sv_mapname->string, sv_mapChecksum->integer);
 #endif
@@ -347,10 +378,17 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	}
 
 	// run another frame to allow things to look at all connected clients
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	ge->RunFrame( sv.time );
 	sv.time += 100;
 	re.G2API_SetTime(sv.time,G2T_SV_TIME);
-
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  final settle frame      : %4dms\n", svt1 - svt0 );
+	LoadLog_Append( "  SV_SpawnServer total    : %4dms\n\n", Sys_Milliseconds() - sv_loadLogStartMs );
+#endif
 
 	// save systeminfo and serverinfo strings
 	SV_SetConfigstring( CS_SYSTEMINFO, Cvar_InfoString( CVAR_SYSTEMINFO ) );
@@ -375,6 +413,9 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 #define G2_VERT_SPACE_SIZE 256
 #define G2_MINIHEAP_SIZE	G2_VERT_SPACE_SIZE*1024
 
+// JK2 SP backend server tick-rate default. Change this value to retune sv_fps.
+static const char* JK2_SP_DEFAULT_SV_FPS = "40";
+
 /*
 ===============
 SV_Init
@@ -394,7 +435,7 @@ void SV_Init (void) {
 	sv_serverid = Cvar_Get ("sv_serverid", "0", CVAR_SYSTEMINFO | CVAR_ROM );
 
 	// server vars
-	sv_fps = Cvar_Get ("sv_fps", "20", CVAR_TEMP );
+	sv_fps = Cvar_Get ("sv_fps", JK2_SP_DEFAULT_SV_FPS, CVAR_TEMP );
 	sv_timeout = Cvar_Get ("sv_timeout", "120", CVAR_TEMP );
 	sv_zombietime = Cvar_Get ("sv_zombietime", "2", CVAR_TEMP );
 	Cvar_Get ("nextmap", "", CVAR_TEMP );

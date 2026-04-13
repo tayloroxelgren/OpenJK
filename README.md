@@ -1,6 +1,12 @@
+# Fork goal
+- Improve loading time of jedi outcast
+
+## Implemented so far
+- Loading timing
+
 # OpenJK
 
-OpenJK is a community effort to maintain and improve the game and engine powering Jedi Academy and Jedi Outcast, while maintaining _full backwards compatibility_ with the existing games and mods.  
+OpenJK is a community effort to maintain and improve the game and engine powering Jedi Academy and Jedi Outcast, while maintaining _full backwards compatibility_ with the existing games and mods.
 This project does not intend to add major features, rebalance, or otherwise modify core gameplay.
 
 Our aims are to:

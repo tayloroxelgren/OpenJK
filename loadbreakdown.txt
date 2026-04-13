@@ -1,0 +1,113 @@
+
+Here is a full load
+
+=== LOAD LOG: kejim_post ===
+
+[Server]
+  CM_LoadMap              :   60ms
+[InitGame: kejim_post]
+  NPC_InitGame            :    0ms
+  IT_LoadItemParms        :    0ms
+  navigator.Load          :    2ms
+  G_SpawnEntitiesFromString:  227ms
+  G_FindTeams             :    0ms
+  InitGame total          :  230ms
+
+  SV_InitGameProgs        :  234ms
+  settle frames (x4)      :   21ms
+  final settle frame      :    3ms
+  SV_SpawnServer total    :  326ms
+
+[CL_InitCGame]
+[RE_LoadWorldMap: maps/kejim_post.bsp]
+  FS_ReadFile (BSP disk)  :    0ms  (used cached buffer)
+  R_LoadShaders           :    0ms
+  R_LoadLightmaps         :    0ms
+  R_LoadPlanes            :    0ms
+  R_LoadFogs              :    0ms
+[R_LoadSurfaces breakdown]
+  pre-scan (face size)    :    0ms
+  ParseMesh  (patch) x1036 :  174ms
+  ParseFace  (planar)x14235 : 1138ms
+  ParseTriSurf       x  9 :    8ms
+  total (excl alloc)      : 1320ms
+  R_LoadSurfaces          : 1322ms
+  R_LoadMarksurfaces      :    0ms
+  R_LoadNodesAndLeafs     :    0ms
+  R_LoadSubmodels         :    0ms
+  R_LoadVisibility        :    0ms
+  R_LoadEntities          :    0ms
+  R_LoadLightGrid         :    1ms
+  R_LoadLightGridArray    :    0ms
+  RE_LoadWorldMap total   : 1325ms
+
+  VM_Call CG_INIT         : 2949ms
+[Asset Registration Breakdown]
+  RE_LoadWorldMap         : 1326ms
+  R_RegisterModel   x597  :  483ms
+  R_RegisterSkin    x  7  :   18ms
+  R_RegisterShader  x738  :  113ms
+  S_RegisterSound   x4081  :  206ms
+  Ghoul2 dispatch   x  0  :    0ms
+  other (true cgame overhead):  803ms
+  re.EndRegistration      :    0ms
+  CL_InitCGame total      : 2950ms
+
+=== TOTAL LOAD TIME: 3412ms ===
+
+
+Here is the quickload time
+
+=== LOAD LOG: kejim_post ===
+
+[Server]
+  CM_LoadMap              :    0ms
+[InitGame: kejim_post]
+  NPC_InitGame            :    1ms
+  IT_LoadItemParms        :    0ms
+  navigator.Load          :    3ms
+  G_SpawnEntitiesFromString:   29ms
+  G_FindTeams             :    1ms
+  InitGame total          :   34ms
+
+  SV_InitGameProgs        :   38ms
+  settle frames (x4)      :    1ms
+  final settle frame      :    0ms
+  SV_SpawnServer total    :   50ms
+
+[CL_InitCGame]
+[RE_LoadWorldMap: maps/kejim_post.bsp]
+  FS_ReadFile (BSP disk)  :    0ms  (used cached buffer)
+  R_LoadShaders           :    0ms
+  R_LoadLightmaps         :    0ms
+  R_LoadPlanes            :    2ms
+  R_LoadFogs              :    0ms
+[R_LoadSurfaces breakdown]
+  pre-scan (face size)    :    0ms
+  ParseMesh  (patch) x1036 :    3ms
+  ParseFace  (planar)x14235 :    6ms
+  ParseTriSurf       x  9 :    0ms
+  total (excl alloc)      :    9ms
+  R_LoadSurfaces          :   10ms
+  R_LoadMarksurfaces      :    0ms
+  R_LoadNodesAndLeafs     :    0ms
+  R_LoadSubmodels         :    0ms
+  R_LoadVisibility        :    1ms
+  R_LoadEntities          :    0ms
+  R_LoadLightGrid         :    0ms
+  R_LoadLightGridArray    :    1ms
+  RE_LoadWorldMap total   :   14ms
+
+  VM_Call CG_INIT         :  225ms
+[Asset Registration Breakdown]
+  RE_LoadWorldMap         :   14ms
+  R_RegisterModel   x597  :    8ms
+  R_RegisterSkin    x  7  :    0ms
+  R_RegisterShader  x738  :    0ms
+  S_RegisterSound   x4081  :    2ms
+  Ghoul2 dispatch   x  0  :    0ms
+  other (true cgame overhead):  201ms
+  re.EndRegistration      :    0ms
+  CL_InitCGame total      :  226ms
+
+=== TOTAL LOAD TIME: 314ms ===
