@@ -42,6 +42,8 @@ void RE_LoadWorldMap( const char *name );
 static	world_t		s_worldData;
 static	byte		*fileBase;
 
+#include "../qcommon/load_timing.h"
+
 int			c_subdivisions;
 int			c_gridVerts;
 
@@ -677,6 +679,10 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 	//	bit hits the zone pretty bad (even the tagFree takes about 9 seconds for that many memblocks),
 	//	so special-case pre-alloc enough space for this data (the patches etc can stay as they are)...
 	//
+#if LOAD_LOGGING
+	int ls_prescan_ms = 0, ls_mesh_ms = 0, ls_face_ms = 0, ls_tri_ms = 0, ls_t0, ls_t1;
+	ls_t0 = ri.Milliseconds();
+#endif
 	int iFaceDataSizeRequired = 0;
 	for ( i = 0 ; i < count ; i++, in++)
 	{
@@ -692,6 +698,9 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 		}
 	}
 	in -= count;	// back it up, ready for loop-proper
+#if LOAD_LOGGING
+	ls_t1 = ri.Milliseconds(); ls_prescan_ms = ls_t1 - ls_t0;
+#endif
 
 	// since this ptr is to hunk data, I can pass it in and have it advanced without worrying about losing
 	//	the original alloc ptr...
@@ -703,16 +712,34 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 	for ( i = 0 ; i < count ; i++, in++, out++ ) {
 		switch ( LittleLong( in->surfaceType ) ) {
 		case MST_PATCH:
+#if LOAD_LOGGING
+			ls_t0 = ri.Milliseconds();
+#endif
 			ParseMesh ( in, dv, out, worldData, index );
 			numMeshes++;
+#if LOAD_LOGGING
+			ls_mesh_ms += ri.Milliseconds() - ls_t0;
+#endif
 			break;
 		case MST_TRIANGLE_SOUP:
+#if LOAD_LOGGING
+			ls_t0 = ri.Milliseconds();
+#endif
 			ParseTriSurf( in, dv, out, indexes, worldData, index );
 			numTriSurfs++;
+#if LOAD_LOGGING
+			ls_tri_ms += ri.Milliseconds() - ls_t0;
+#endif
 			break;
 		case MST_PLANAR:
+#if LOAD_LOGGING
+			ls_t0 = ri.Milliseconds();
+#endif
 			ParseFace( in, dv, out, indexes, pFaceDataBuffer, worldData, index );
 			numFaces++;
+#if LOAD_LOGGING
+			ls_face_ms += ri.Milliseconds() - ls_t0;
+#endif
 			break;
 		case MST_FLARE:
 			ParseFlare( in, dv, out, indexes, worldData, index );
@@ -725,6 +752,14 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 
 	ri.Printf( PRINT_ALL, "...loaded %d faces, %i meshes, %i trisurfs, %i flares\n",
 		numFaces, numMeshes, numTriSurfs, numFlares );
+#if LOAD_LOGGING
+	LoadLog_Append( "[R_LoadSurfaces breakdown]\n" );
+	LoadLog_Append( "  pre-scan (face size)    : %4dms\n", ls_prescan_ms );
+	LoadLog_Append( "  ParseMesh  (patch) x%3d : %4dms\n", numMeshes,   ls_mesh_ms );
+	LoadLog_Append( "  ParseFace  (planar)x%3d : %4dms\n", numFaces,    ls_face_ms );
+	LoadLog_Append( "  ParseTriSurf       x%3d : %4dms\n", numTriSurfs, ls_tri_ms  );
+	LoadLog_Append( "  total (excl alloc)      : %4dms\n", ls_prescan_ms + ls_mesh_ms + ls_face_ms + ls_tri_ms );
+#endif
 }
 
 
@@ -1381,14 +1416,26 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index ) {
 
 	tr.worldDir[0] = '\0';
 
+	LoadLog_Append( "[RE_LoadWorldMap: %s]\n", name );
+
 	if (buffer == NULL)
 	{
 		// still needs loading...
 		//
+#if LOAD_LOGGING
+		int fsReadStart = ri.Milliseconds();
+#endif
 		ri.FS_ReadFile( name, (void **)&buffer );
+#if LOAD_LOGGING
+		LoadLog_Append( "  FS_ReadFile (BSP disk)  : %4dms\n", ri.Milliseconds() - fsReadStart );
+#endif
 		if ( !buffer ) {
 			Com_Error (ERR_DROP, "RE_LoadWorldMap: %s not found", name);
 		}
+	}
+	else
+	{
+		LoadLog_Append( "  FS_ReadFile (BSP disk)  :    0ms  (used cached buffer)\n" );
 	}
 
 	memset( &worldData, 0, sizeof( worldData ) );
@@ -1417,26 +1464,75 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index ) {
 	}
 
 	// load into heap
+#if LOAD_LOGGING
+	int bspt0, bspt1;
+	const int bspStart = ri.Milliseconds();
+#define BSP_TIME_START    bspt0 = ri.Milliseconds()
+#define BSP_TIME_END(lbl) bspt1 = ri.Milliseconds(); LoadLog_Append( "  %-24s: %4dms\n", lbl, bspt1 - bspt0 )
+#else
+#define BSP_TIME_START    ((void)0)
+#define BSP_TIME_END(lbl) ((void)0)
+#endif
+
+	BSP_TIME_START;
 	R_LoadShaders( &header->lumps[LUMP_SHADERS], worldData );
+	BSP_TIME_END( "R_LoadShaders" );
+
+	BSP_TIME_START;
 	R_LoadLightmaps( &header->lumps[LUMP_LIGHTMAPS], name, worldData );
-	R_LoadPlanes (&header->lumps[LUMP_PLANES], worldData);
+	BSP_TIME_END( "R_LoadLightmaps" );
+
+	BSP_TIME_START;
+	R_LoadPlanes( &header->lumps[LUMP_PLANES], worldData );
+	BSP_TIME_END( "R_LoadPlanes" );
+
+	BSP_TIME_START;
 	R_LoadFogs( &header->lumps[LUMP_FOGS], &header->lumps[LUMP_BRUSHES], &header->lumps[LUMP_BRUSHSIDES], worldData, index );
+	BSP_TIME_END( "R_LoadFogs" );
+
+	BSP_TIME_START;
 	R_LoadSurfaces( &header->lumps[LUMP_SURFACES], &header->lumps[LUMP_DRAWVERTS], &header->lumps[LUMP_DRAWINDEXES], worldData, index );
-	R_LoadMarksurfaces (&header->lumps[LUMP_LEAFSURFACES], worldData);
-	R_LoadNodesAndLeafs (&header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS], worldData);
-	R_LoadSubmodels (&header->lumps[LUMP_MODELS], worldData, index);
+	BSP_TIME_END( "R_LoadSurfaces" );
+
+	BSP_TIME_START;
+	R_LoadMarksurfaces( &header->lumps[LUMP_LEAFSURFACES], worldData );
+	BSP_TIME_END( "R_LoadMarksurfaces" );
+
+	BSP_TIME_START;
+	R_LoadNodesAndLeafs( &header->lumps[LUMP_NODES], &header->lumps[LUMP_LEAFS], worldData );
+	BSP_TIME_END( "R_LoadNodesAndLeafs" );
+
+	BSP_TIME_START;
+	R_LoadSubmodels( &header->lumps[LUMP_MODELS], worldData, index );
+	BSP_TIME_END( "R_LoadSubmodels" );
+
+	BSP_TIME_START;
 	R_LoadVisibility( &header->lumps[LUMP_VISIBILITY], worldData );
+	BSP_TIME_END( "R_LoadVisibility" );
 
 	if (!index)
 	{
+		BSP_TIME_START;
 		R_LoadEntities( &header->lumps[LUMP_ENTITIES], worldData );
+		BSP_TIME_END( "R_LoadEntities" );
+
+		BSP_TIME_START;
 		R_LoadLightGrid( &header->lumps[LUMP_LIGHTGRID], worldData );
+		BSP_TIME_END( "R_LoadLightGrid" );
+
+		BSP_TIME_START;
 		R_LoadLightGridArray( &header->lumps[LUMP_LIGHTARRAY], worldData );
+		BSP_TIME_END( "R_LoadLightGridArray" );
 
 		// only set tr.world now that we know the entire level has loaded properly
 		tr.world = &worldData;
 	}
 
+#if LOAD_LOGGING
+	LoadLog_Append( "  %-24s: %4dms\n\n", "RE_LoadWorldMap total", ri.Milliseconds() - bspStart );
+#endif
+#undef BSP_TIME_START
+#undef BSP_TIME_END
 
 	if (ri.gpvCachedMapDiskImage() && !loadedSubBSP)
 	{

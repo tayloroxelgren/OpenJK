@@ -22,6 +22,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "g_headers.h"
+#include "../code/qcommon/load_timing.h"
 
 #include "g_local.h"
 #include "g_functions.h"
@@ -663,8 +664,21 @@ void InitGame(  const char *mapname, const char *spawntarget, int checkSum, cons
 	// range are NEVER anything but clients
 	globals.num_entities = MAX_CLIENTS;
 
+#if LOAD_LOGGING
+	int igt0, igt1;
+	const int igStart = gi.Milliseconds();
+	LoadLog_Append( "[InitGame: %s]\n", mapname );
+#endif
+
 	//Set up NPC init data
+#if LOAD_LOGGING
+	igt0 = gi.Milliseconds();
+#endif
 	NPC_InitGame();
+#if LOAD_LOGGING
+	igt1 = gi.Milliseconds();
+	LoadLog_Append( "  NPC_InitGame            : %4dms\n", igt1 - igt0 );
+#endif
 
 	TIMER_Clear();
 
@@ -682,18 +696,47 @@ void InitGame(  const char *mapname, const char *spawntarget, int checkSum, cons
 	//ICARUS INIT END
 	//
 
+#if LOAD_LOGGING
+	igt0 = gi.Milliseconds();
+#endif
 	IT_LoadItemParms ();
+#if LOAD_LOGGING
+	igt1 = gi.Milliseconds();
+	LoadLog_Append( "  IT_LoadItemParms        : %4dms\n", igt1 - igt0 );
+#endif
 
 	ClearRegisteredItems();
 
 	//FIXME: if this is from a loadgame, it needs to be sure to write this out whenever you do a savegame since the edges and routes are dynamic...
+#if LOAD_LOGGING
+	igt0 = gi.Milliseconds();
+#endif
 	navCalculatePaths	= ( navigator.Load( mapname, checkSum ) == qfalse );
+#if LOAD_LOGGING
+	igt1 = gi.Milliseconds();
+	LoadLog_Append( "  navigator.Load          : %4dms\n", igt1 - igt0 );
+#endif
 
 	// parse the key/value pairs and spawn gentities
+#if LOAD_LOGGING
+	igt0 = gi.Milliseconds();
+#endif
 	G_SpawnEntitiesFromString( entities );
+#if LOAD_LOGGING
+	igt1 = gi.Milliseconds();
+	LoadLog_Append( "  G_SpawnEntitiesFromString: %4dms\n", igt1 - igt0 );
+#endif
 
 	// general initialization
+#if LOAD_LOGGING
+	igt0 = gi.Milliseconds();
+#endif
 	G_FindTeams();
+#if LOAD_LOGGING
+	igt1 = gi.Milliseconds();
+	LoadLog_Append( "  G_FindTeams             : %4dms\n", igt1 - igt0 );
+	LoadLog_Append( "  InitGame total          : %4dms\n\n", gi.Milliseconds() - igStart );
+#endif
 
 //	SaveRegisteredItems();
 

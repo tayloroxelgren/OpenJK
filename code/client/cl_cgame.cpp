@@ -27,6 +27,19 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 //
 #include "../server/exe_headers.h"
 #include "../ui/ui_shared.h"
+#include "../qcommon/load_timing.h"
+
+extern int sv_loadLogStartMs;
+
+#if LOAD_LOGGING
+// Accumulated per-category registration time, reset each CL_InitCGame.
+static int s_regModel_ms,     s_regModel_n;
+static int s_regSkin_ms,      s_regSkin_n;
+static int s_regShader_ms,    s_regShader_n;
+static int s_regSound_ms,     s_regSound_n;
+static int s_loadWorldMap_ms;              // RE_LoadWorldMap (runs inside CG_INIT)
+static int s_ghoul2_ms,       s_ghoul2_n;  // all CG_G2_* dispatch
+#endif
 
 #include "client.h"
 #include "vmachine.h"
@@ -951,6 +964,9 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		S_Respatialize( args[1], (const float *) VMA(2), (float(*)[3]) VMA(3), (qboolean)(args[4] != 0) );
 		return 0;
 	case CG_S_REGISTERSOUND:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = S_RegisterSound( (const char *) VMA(1) ); s_regSound_ms += Sys_Milliseconds() - _t; s_regSound_n++; return _r; }
+#endif
 		return S_RegisterSound( (const char *) VMA(1) );
 	case CG_S_STARTBACKGROUNDTRACK:
 		S_StartBackgroundTrack( (const char *) VMA(1), (const char *) VMA(2), (qboolean)(args[3] != 0) );
@@ -958,15 +974,30 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 	case CG_S_GETSAMPLELENGTH:
 		return S_GetSampleLengthInMilliSeconds(  args[1]);
 	case CG_R_LOADWORLDMAP:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); re.LoadWorld( (const char *) VMA(1) ); s_loadWorldMap_ms += Sys_Milliseconds() - _t; return 0; }
+#endif
 		re.LoadWorld( (const char *) VMA(1) );
 		return 0;
 	case CG_R_REGISTERMODEL:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = re.RegisterModel( (const char *) VMA(1) ); s_regModel_ms += Sys_Milliseconds() - _t; s_regModel_n++; return _r; }
+#endif
 		return re.RegisterModel( (const char *) VMA(1) );
 	case CG_R_REGISTERSKIN:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = re.RegisterSkin( (const char *) VMA(1) ); s_regSkin_ms += Sys_Milliseconds() - _t; s_regSkin_n++; return _r; }
+#endif
 		return re.RegisterSkin( (const char *) VMA(1) );
 	case CG_R_REGISTERSHADER:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = re.RegisterShader( (const char *) VMA(1) ); s_regShader_ms += Sys_Milliseconds() - _t; s_regShader_n++; return _r; }
+#endif
 		return re.RegisterShader( (const char *) VMA(1) );
 	case CG_R_REGISTERSHADERNOMIP:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = re.RegisterShaderNoMip( (const char *) VMA(1) ); s_regShader_ms += Sys_Milliseconds() - _t; s_regShader_n++; return _r; }
+#endif
 		return re.RegisterShaderNoMip( (const char *) VMA(1) );
 	case CG_R_REGISTERFONT:
 		return re.RegisterFont( (const char *) VMA(1) );
@@ -1080,17 +1111,29 @@ Ghoul2 Insert Start
 */
 
 	case CG_G2_LISTSURFACES:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); re.G2API_ListSurfaces( (CGhoul2Info *) VMA(1) ); s_ghoul2_ms += Sys_Milliseconds() - _t; s_ghoul2_n++; return 0; }
+#endif
 		re.G2API_ListSurfaces( (CGhoul2Info *) VMA(1) );
 		return 0;
 
 	case CG_G2_LISTBONES:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); re.G2API_ListBones( (CGhoul2Info *) VMA(1), args[2] ); s_ghoul2_ms += Sys_Milliseconds() - _t; s_ghoul2_n++; return 0; }
+#endif
 		re.G2API_ListBones( (CGhoul2Info *) VMA(1), args[2]);
 		return 0;
 
 	case CG_G2_HAVEWEGHOULMODELS:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); intptr_t _r = re.G2API_HaveWeGhoul2Models( *((CGhoul2Info_v *)VMA(1)) ); s_ghoul2_ms += Sys_Milliseconds() - _t; s_ghoul2_n++; return _r; }
+#endif
 		return re.G2API_HaveWeGhoul2Models( *((CGhoul2Info_v *)VMA(1)) );
 
 	case CG_G2_SETMODELS:
+#if LOAD_LOGGING
+		{ int _t = Sys_Milliseconds(); re.G2API_SetGhoul2ModelIndexes( *((CGhoul2Info_v *)VMA(1)),(qhandle_t *)VMA(2),(qhandle_t *)VMA(3)); s_ghoul2_ms += Sys_Milliseconds() - _t; s_ghoul2_n++; return 0; }
+#endif
 		re.G2API_SetGhoul2ModelIndexes( *((CGhoul2Info_v *)VMA(1)),(qhandle_t *)VMA(2),(qhandle_t *)VMA(3));
 		return 0;
 
@@ -1393,9 +1436,16 @@ extern qboolean Sys_LowPhysicalMemory();
 void CL_InitCGame( void ) {
 	const char			*info;
 	const char			*mapname;
-	//int		t1, t2;
-
-	//t1 = Sys_Milliseconds();
+#if LOAD_LOGGING
+	int					t1, t2;
+	s_regModel_ms     = s_regModel_n     = 0;
+	s_regSkin_ms      = s_regSkin_n      = 0;
+	s_regShader_ms    = s_regShader_n    = 0;
+	s_regSound_ms     = s_regSound_n     = 0;
+	s_loadWorldMap_ms = 0;
+	s_ghoul2_ms       = s_ghoul2_n       = 0;
+	t1 = Sys_Milliseconds();
+#endif
 
 	// put away the console
 	Con_Close();
@@ -1408,7 +1458,24 @@ void CL_InitCGame( void ) {
 	cls.state = CA_LOADING;
 
 	// init for this gamestate
+#if LOAD_LOGGING
+	LoadLog_Append( "[CL_InitCGame]\n" );
+	int cgt0 = Sys_Milliseconds();
+#endif
 	VM_Call( CG_INIT, clc.serverCommandSequence );
+#if LOAD_LOGGING
+	int cgt1 = Sys_Milliseconds();
+	LoadLog_Append( "  VM_Call CG_INIT         : %4dms\n", cgt1 - cgt0 );
+	LoadLog_Append( "[Asset Registration Breakdown]\n" );
+	LoadLog_Append( "  RE_LoadWorldMap         : %4dms\n", s_loadWorldMap_ms );
+	LoadLog_Append( "  R_RegisterModel   x%3d  : %4dms\n", s_regModel_n,  s_regModel_ms );
+	LoadLog_Append( "  R_RegisterSkin    x%3d  : %4dms\n", s_regSkin_n,   s_regSkin_ms );
+	LoadLog_Append( "  R_RegisterShader  x%3d  : %4dms\n", s_regShader_n, s_regShader_ms );
+	LoadLog_Append( "  S_RegisterSound   x%3d  : %4dms\n", s_regSound_n,  s_regSound_ms );
+	LoadLog_Append( "  Ghoul2 dispatch   x%3d  : %4dms\n", s_ghoul2_n,    s_ghoul2_ms );
+	LoadLog_Append( "  other (true cgame overhead): %4dms\n",
+		(cgt1 - cgt0) - s_loadWorldMap_ms - s_regModel_ms - s_regSkin_ms - s_regShader_ms - s_regSound_ms - s_ghoul2_ms );
+#endif
 
 	// reset any CVAR_CHEAT cvars registered by cgame
 	if ( !cl_connectedToCheatServer )
@@ -1418,12 +1485,22 @@ void CL_InitCGame( void ) {
 	// will cause the server to send us the first snapshot
 	cls.state = CA_PRIMED;
 
-	//t2 = Sys_Milliseconds();
-
-	//Com_Printf( "CL_InitCGame: %5.2f seconds\n", (t2-t1)/1000.0 );
 	// have the renderer touch all its images, so they are present
 	// on the card even if the driver does deferred loading
+#if LOAD_LOGGING
+	cgt0 = Sys_Milliseconds();
+#endif
 	re.EndRegistration();
+#if LOAD_LOGGING
+	cgt1 = Sys_Milliseconds();
+	t2 = Sys_Milliseconds();
+	LoadLog_Append( "  re.EndRegistration      : %4dms\n", cgt1 - cgt0 );
+	LoadLog_Append( "  CL_InitCGame total      : %4dms\n", t2 - t1 );
+	if ( sv_loadLogStartMs > 0 ) {
+		LoadLog_Append( "\n=== TOTAL LOAD TIME: %dms ===\n", Sys_Milliseconds() - sv_loadLogStartMs );
+		sv_loadLogStartMs = 0;
+	}
+#endif
 
 	// make sure everything is paged in
 //	if (!Sys_LowPhysicalMemory())
