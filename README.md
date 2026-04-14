@@ -4,6 +4,9 @@
 ## Implemented so far
 - Loading timing
 
+## Looking into
+- tr_bsp.cpp
+
 # OpenJK
 
 OpenJK is a community effort to maintain and improve the game and engine powering Jedi Academy and Jedi Outcast, while maintaining _full backwards compatibility_ with the existing games and mods.

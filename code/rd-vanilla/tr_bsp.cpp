@@ -735,6 +735,13 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 #if LOAD_LOGGING
 			ls_t0 = ri.Milliseconds();
 #endif
+			// in The current raw BSP surface record being processed.
+			// dv The big array of raw map vertices; ParseFace picks the subset this face needs.
+			// out The destination runtime surface slot where parsed results are stored.
+			// pFaceDataBuffer A preallocated memory arena cursor where face geometry blobs are packed sequentially.
+			// worldData The world being built (shared context: shaders, fog/lightmap offsets, global map state).
+			// index Which world instance is being loaded (main world vs sub-BSP instance), used for context-specific behavior.
+
 			ParseFace( in, dv, out, indexes, pFaceDataBuffer, worldData, index );
 			numFaces++;
 #if LOAD_LOGGING
