@@ -6,6 +6,9 @@
 
 ## Looking into
 - tr_bsp.cpp
+- tr_shader.cpp
+
+R_FindShader seems to be a big bottleneck on cold load
 
 # OpenJK
 
