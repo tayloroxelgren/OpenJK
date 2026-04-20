@@ -47,6 +47,11 @@ static	byte		*fileBase;
 int			c_subdivisions;
 int			c_gridVerts;
 
+#if LOAD_LOGGING
+static int s_parseFaceShaderMs = 0;
+static int s_parseFaceShaderCalls = 0;
+#endif
+
 //===============================================================================
 
 static void HSVtoRGB( float h, float s, float v, float rgb[3] )
@@ -388,10 +393,17 @@ static void ParseFace( dsurface_t *ds, mapVert_t *verts, msurface_t *surf, int *
 	}
 
 	// get shader value
+	#if LOAD_LOGGING
+	const int shaderLookupStart = ri.Milliseconds();
+	#endif
 	surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum, ds->lightmapStyles, ds->vertexStyles, worldData );
 	if ( r_singleShader->integer && !surf->shader->sky ) {
 		surf->shader = tr.defaultShader;
 	}
+	#if LOAD_LOGGING
+	s_parseFaceShaderMs += (ri.Milliseconds() - shaderLookupStart);
+	s_parseFaceShaderCalls++;
+	#endif
 
 	numPoints = LittleLong( ds->numVerts );
 	numIndexes = LittleLong( ds->numIndexes );
@@ -682,6 +694,8 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 #if LOAD_LOGGING
 	int ls_prescan_ms = 0, ls_mesh_ms = 0, ls_face_ms = 0, ls_tri_ms = 0, ls_t0, ls_t1;
 	ls_t0 = ri.Milliseconds();
+	s_parseFaceShaderMs = 0;
+	s_parseFaceShaderCalls = 0;
 #endif
 	int iFaceDataSizeRequired = 0;
 	for ( i = 0 ; i < count ; i++, in++)
@@ -764,6 +778,7 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 	LoadLog_Append( "  pre-scan (face size)    : %4dms\n", ls_prescan_ms );
 	LoadLog_Append( "  ParseMesh  (patch) x%3d : %4dms\n", numMeshes,   ls_mesh_ms );
 	LoadLog_Append( "  ParseFace  (planar)x%3d : %4dms\n", numFaces,    ls_face_ms );
+	LoadLog_Append( "    - ShaderForShaderNum x%3d : %4dms\n", s_parseFaceShaderCalls, s_parseFaceShaderMs );
 	LoadLog_Append( "  ParseTriSurf       x%3d : %4dms\n", numTriSurfs, ls_tri_ms  );
 	LoadLog_Append( "  total (excl alloc)      : %4dms\n", ls_prescan_ms + ls_mesh_ms + ls_face_ms + ls_tri_ms );
 #endif
