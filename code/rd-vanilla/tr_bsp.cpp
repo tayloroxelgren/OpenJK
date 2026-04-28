@@ -1393,6 +1393,11 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index ) {
 	if ( tr.worldMapLoaded && !index ) {
 		Com_Error( ERR_DROP, "ERROR: attempted to redundantly load world map\n" );
 	}
+#if LOAD_LOGGING
+	if ( !index ) {
+		R_Image_ResetTimingStats();
+	}
+#endif
 
 	// set default sun direction to be used if it isn't
 	// overridden by a shader
