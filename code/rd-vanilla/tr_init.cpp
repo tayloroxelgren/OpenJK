@@ -31,6 +31,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_stl.h"
 #include "../rd-common/tr_font.h"
 #include "tr_WorldEffects.h"
+#include "../qcommon/load_timing.h"
 
 glconfig_t	glConfig;
 glstate_t	glState;
@@ -1854,6 +1855,9 @@ Touch all images to make sure they are resident
 */
 void	RE_EndRegistration( void ) {
 	R_IssuePendingRenderCommands();
+#if LOAD_LOGGING
+	R_Image_LogTimingStats();
+#endif
 }
 
 

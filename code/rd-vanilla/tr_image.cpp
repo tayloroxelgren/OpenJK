@@ -30,7 +30,25 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../rd-common/tr_common.h"
 #include <png.h>
 #include <map>
+#include "../qcommon/load_timing.h"
 
+#if LOAD_LOGGING
+static int s_findImageFile_ms, s_findImageFile_n;
+static int s_loadImage_ms,     s_loadImage_n;
+
+void R_Image_ResetTimingStats( void ) {
+	s_findImageFile_ms = s_findImageFile_n = 0;
+	s_loadImage_ms     = s_loadImage_n     = 0;
+}
+
+void R_Image_LogTimingStats( void ) {
+	LoadLog_Append( "  R_FindImageFile   x%3d  : %4dms\n", s_findImageFile_n, s_findImageFile_ms );
+	LoadLog_Append( "    R_LoadImage     x%3d  : %4dms\n", s_loadImage_n,     s_loadImage_ms );
+}
+#else
+void R_Image_ResetTimingStats( void ) {}
+void R_Image_LogTimingStats( void )  {}
+#endif
 static byte			 s_intensitytable[256];
 static unsigned char s_gammatable[256];
 
@@ -1071,6 +1089,9 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 	if (!name) {
 		return NULL;
 	}
+#if LOAD_LOGGING
+	int _fif_t0 = ri.Milliseconds();
+#endif
 
 	// need to do this here as well as in R_CreateImage, or R_FindImageFile_NoLoad() may complain about
 	//	different clamp parms used...
@@ -1081,19 +1102,35 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 
 	image = R_FindImageFile_NoLoad(name, mipmap, allowPicmip, allowTC, glWrapClampMode );
 	if (image) {
+#if LOAD_LOGGING
+		s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
+		s_findImageFile_n++;
+#endif
 		return image;
 	}
 
 	//
 	// load the pic from disk
 	//
+#if LOAD_LOGGING
+	{ int _li_t = ri.Milliseconds(); R_LoadImage( name, &pic, &width, &height ); s_loadImage_ms += ri.Milliseconds() - _li_t; s_loadImage_n++; }
+#else
 	R_LoadImage( name, &pic, &width, &height );
+#endif
 	if ( !pic ) {
-        return NULL;
+#if LOAD_LOGGING
+		s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
+		s_findImageFile_n++;
+#endif
+		return NULL;
 	}
 
 	image = R_CreateImage( ( char * ) name, pic, width, height, GL_RGBA, mipmap, allowPicmip, allowTC, glWrapClampMode );
 	R_Free( pic );
+#if LOAD_LOGGING
+	s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
+	s_findImageFile_n++;
+#endif
 	return image;
 }
 
