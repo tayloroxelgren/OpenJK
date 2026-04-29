@@ -27,10 +27,26 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_common.h"
 #include "tr_local.h"
 #include "tr_stl.h"
+#include "../qcommon/load_timing.h"
 
 // tr_shader.c -- this file deals with the parsing and definition of shaders
 
 static char *s_shaderText;
+
+#if LOAD_LOGGING
+static int s_parseShader_ms, s_parseShader_n;
+
+void R_Shader_ResetTimingStats( void ) {
+	s_parseShader_ms = s_parseShader_n = 0;
+}
+
+void R_Shader_LogTimingStats( void ) {
+	LoadLog_Append( "      - ParseShader  x%3d  : %4dms\n", s_parseShader_n, s_parseShader_ms );
+}
+#else
+void R_Shader_ResetTimingStats( void ) {}
+void R_Shader_LogTimingStats( void )  {}
+#endif
 
 // the shader is parsed into these global variables, then copied into
 // dynamically allocated memory if it is valid.
@@ -3486,10 +3502,17 @@ shader_t *R_FindShader( const char *name, const int *lightmapIndex, const byte *
 	//
 	shaderText = FindShaderInShaderText( strippedName );
 	if ( shaderText ) {
+#if LOAD_LOGGING
+		int _ps_t = ri.Milliseconds();
+#endif
 		if ( !ParseShader( &shaderText ) ) {
 			// had errors, so use default shader
 			shader.defaultShader = true;
 		}
+#if LOAD_LOGGING
+		s_parseShader_ms += ri.Milliseconds() - _ps_t;
+		s_parseShader_n++;
+#endif
 		sh = FinishShader();
 		return sh;
 	}

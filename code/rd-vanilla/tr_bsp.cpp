@@ -1396,6 +1396,7 @@ void RE_LoadWorldMap_Actual( const char *name, world_t &worldData, int index ) {
 #if LOAD_LOGGING
 	if ( !index ) {
 		R_Image_ResetTimingStats();
+		R_Shader_ResetTimingStats();
 	}
 #endif
 

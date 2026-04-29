@@ -1336,6 +1336,8 @@ image_t		*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicm
 image_t		*R_CreateImage( const char *name, const byte *pic, int width, int height, GLenum format, qboolean mipmap, qboolean allowPicmip, qboolean allowTC, int wrapClampMode);
 void		R_Image_ResetTimingStats( void );
 void		R_Image_LogTimingStats( void );
+void		R_Shader_ResetTimingStats( void );
+void		R_Shader_LogTimingStats( void );
 
 qboolean	R_GetModeInfo( int *width, int *height, int mode );
 
