@@ -50,9 +50,6 @@ int			c_gridVerts;
 #if LOAD_LOGGING
 static int s_parseFaceShaderMs = 0;
 static int s_parseFaceShaderCalls = 0;
-static int s_findShaderMs = 0;
-static int s_findShaderCalls = 0;
-static qboolean s_timingParseFaceShader = qfalse;
 #endif
 
 //===============================================================================
@@ -356,19 +353,7 @@ static shader_t *ShaderForShaderNum( int shaderNum, const int *lightmapNum, cons
 		styles = vertexStyles;
 	}
 */
-	#if LOAD_LOGGING
-	int findShaderStart = 0;
-	if (s_timingParseFaceShader) {
-		findShaderStart = ri.Milliseconds();
-	}
-	#endif
 	shader = R_FindShader( dsh->shader, lightmapNum, styles, qtrue );
-	#if LOAD_LOGGING
-	if (s_timingParseFaceShader) {
-		s_findShaderMs += (ri.Milliseconds() - findShaderStart);
-		s_findShaderCalls++;
-	}
-	#endif
 
 	// if the shader had errors, just use default shader
 	if ( shader->defaultShader ) {
@@ -410,12 +395,8 @@ static void ParseFace( dsurface_t *ds, mapVert_t *verts, msurface_t *surf, int *
 	// get shader value
 	#if LOAD_LOGGING
 	const int shaderLookupStart = ri.Milliseconds();
-	s_timingParseFaceShader = qtrue;
 	#endif
 	surf->shader = ShaderForShaderNum( ds->shaderNum, lightmapNum, ds->lightmapStyles, ds->vertexStyles, worldData );
-	#if LOAD_LOGGING
-	s_timingParseFaceShader = qfalse;
-	#endif
 	if ( r_singleShader->integer && !surf->shader->sky ) {
 		surf->shader = tr.defaultShader;
 	}
@@ -715,8 +696,6 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 	ls_t0 = ri.Milliseconds();
 	s_parseFaceShaderMs = 0;
 	s_parseFaceShaderCalls = 0;
-	s_findShaderMs = 0;
-	s_findShaderCalls = 0;
 #endif
 	int iFaceDataSizeRequired = 0;
 	for ( i = 0 ; i < count ; i++, in++)
@@ -800,7 +779,6 @@ static	void R_LoadSurfaces( lump_t *surfs, lump_t *verts, lump_t *indexLump, wor
 	LoadLog_Append( "  ParseMesh  (patch) x%3d : %4dms\n", numMeshes,   ls_mesh_ms );
 	LoadLog_Append( "  ParseFace  (planar)x%3d : %4dms\n", numFaces,    ls_face_ms );
 	LoadLog_Append( "    - ShaderForShaderNum x%3d : %4dms\n", s_parseFaceShaderCalls, s_parseFaceShaderMs );
-	LoadLog_Append( "    - R_FindShader      x%3d : %4dms\n", s_findShaderCalls, s_findShaderMs );
 	LoadLog_Append( "  ParseTriSurf       x%3d : %4dms\n", numTriSurfs, ls_tri_ms  );
 	LoadLog_Append( "  total (excl alloc)      : %4dms\n", ls_prescan_ms + ls_mesh_ms + ls_face_ms + ls_tri_ms );
 #endif
