@@ -1857,6 +1857,7 @@ void	RE_EndRegistration( void ) {
 	R_IssuePendingRenderCommands();
 #if LOAD_LOGGING
 	R_Image_LogTimingStats();
+	R_Shader_LogTimingStats();
 #endif
 }
 
