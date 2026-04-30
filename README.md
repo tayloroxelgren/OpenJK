@@ -8,10 +8,10 @@
 - R_FindImageFile
 
 ## Break down of load times
-[R_LoadSurfaces breakdown]
-  pre-scan (face size)    :    0ms
-  ParseMesh  (patch) x1036 :  140ms
-  ParseFace  (planar)x14235 : 1148ms
+- [R_LoadSurfaces breakdown]
+  - pre-scan (face size)    :    0ms
+  - ParseMesh  (patch) x1036 :  140ms
+  - ParseFace  (planar)x14235 : 1148ms
     - ShaderForShaderNum x14235 : 1145ms
     - R_FindShader      x14235 : 1145ms
       - ParseShader  x113  :  768ms
