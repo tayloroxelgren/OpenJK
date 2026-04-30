@@ -5,10 +5,18 @@
 - Loading timing
 
 ## Looking into
-- tr_bsp.cpp
-- tr_shader.cpp
+- R_FindImageFile
 
-R_FindShader seems to be a big bottleneck on cold load
+## Break down of load times
+[R_LoadSurfaces breakdown]
+  pre-scan (face size)    :    0ms
+  ParseMesh  (patch) x1036 :  140ms
+  ParseFace  (planar)x14235 : 1148ms
+    - ShaderForShaderNum x14235 : 1145ms
+    - R_FindShader      x14235 : 1145ms
+      - ParseShader  x113  :  768ms
+        - ParseStage  x281  :  642ms
+          - R_FindImageFile  x229  :  640ms
 
 # OpenJK
 
