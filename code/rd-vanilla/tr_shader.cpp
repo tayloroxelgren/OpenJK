@@ -35,13 +35,16 @@ static char *s_shaderText;
 
 #if LOAD_LOGGING
 static int s_parseShader_ms, s_parseShader_n;
+static int s_parseStage_ms, s_parseStage_n;
 
 void R_Shader_ResetTimingStats( void ) {
 	s_parseShader_ms = s_parseShader_n = 0;
+	s_parseStage_ms = s_parseStage_n = 0;
 }
 
 void R_Shader_LogTimingStats( void ) {
 	LoadLog_Append( "      - ParseShader  x%3d  : %4dms\n", s_parseShader_n, s_parseShader_ms );
+	LoadLog_Append( "        - ParseStage  x%3d  : %4dms\n", s_parseStage_n, s_parseStage_ms );
 }
 #else
 void R_Shader_ResetTimingStats( void ) {}
@@ -2218,11 +2221,17 @@ static qboolean ParseShader( const char  **text )
 				return qfalse;
 			}
 
+#if LOAD_LOGGING
+			{ int _t = ri.Milliseconds();
+#endif
 			if ( !ParseStage( &stages[s], text ) )
 			{
 				COM_EndParseSession();
 				return qfalse;
 			}
+#if LOAD_LOGGING
+			s_parseStage_ms += ri.Milliseconds() - _t; s_parseStage_n++; }
+#endif
 			stages[s].active = true;
 
 			if ( stages[s].glow )
