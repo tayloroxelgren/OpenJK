@@ -24,6 +24,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 // tr_init.c -- functions that are not called every frame
 
 #include "tr_local.h"
+#include "../../code/qcommon/load_timing.h"
 
 #include <algorithm>
 #include "../rd-common/tr_common.h"
@@ -1899,6 +1900,9 @@ Touch all images to make sure they are resident
 */
 void RE_EndRegistration( void ) {
 	R_IssuePendingRenderCommands();
+#if LOAD_LOGGING
+	R_Image_LogTimingStats();
+#endif
 	if (!ri.Sys_LowPhysicalMemory()) {
 		RB_ShowImages();
 	}
