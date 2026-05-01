@@ -42,12 +42,14 @@ void R_Shader_ResetTimingStats( void ) {
 	s_parseShader_ms = s_parseShader_n = 0;
 	s_parseStage_ms = s_parseStage_n = 0;
 	s_parseStage_R_FindImageFile_ms = s_parseStage_R_FindImageFile_n = 0;
+	R_Image_ResetTimingStats();
 }
 
 void R_Shader_LogTimingStats( void ) {
 	LoadLog_Append( "      - ParseShader  x%3d  : %4dms\n", s_parseShader_n, s_parseShader_ms );
 	LoadLog_Append( "        - ParseStage  x%3d  : %4dms\n", s_parseStage_n, s_parseStage_ms );
 	LoadLog_Append( "          - R_FindImageFile  x%3d  : %4dms\n", s_parseStage_R_FindImageFile_n, s_parseStage_R_FindImageFile_ms );
+	R_Image_LogSubTimingStats();
 }
 #else
 void R_Shader_ResetTimingStats( void ) {}

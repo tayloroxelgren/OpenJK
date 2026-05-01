@@ -33,21 +33,32 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../qcommon/load_timing.h"
 
 #if LOAD_LOGGING
-static int s_findImageFile_ms, s_findImageFile_n;
-static int s_loadImage_ms,     s_loadImage_n;
+static int s_findImageFile_ms,     s_findImageFile_n;
+static int s_findImageFile_NoLoad_ms, s_findImageFile_NoLoad_n;
+static int s_loadImage_ms,         s_loadImage_n;
+static int s_createImage_ms,       s_createImage_n;
 
 void R_Image_ResetTimingStats( void ) {
-	s_findImageFile_ms = s_findImageFile_n = 0;
-	s_loadImage_ms     = s_loadImage_n     = 0;
+	s_findImageFile_ms        = s_findImageFile_n        = 0;
+	s_findImageFile_NoLoad_ms = s_findImageFile_NoLoad_n = 0;
+	s_loadImage_ms            = s_loadImage_n            = 0;
+	s_createImage_ms          = s_createImage_n          = 0;
 }
 
 void R_Image_LogTimingStats( void ) {
 	LoadLog_Append( "  R_FindImageFile   x%3d  : %4dms\n", s_findImageFile_n, s_findImageFile_ms );
 	LoadLog_Append( "    R_LoadImage     x%3d  : %4dms\n", s_loadImage_n,     s_loadImage_ms );
 }
+
+void R_Image_LogSubTimingStats( void ) {
+	LoadLog_Append( "            - R_FindImageFile_NoLoad x%3d  : %4dms\n", s_findImageFile_NoLoad_n, s_findImageFile_NoLoad_ms );
+	LoadLog_Append( "            - R_LoadImage            x%3d  : %4dms\n", s_loadImage_n,            s_loadImage_ms );
+	LoadLog_Append( "            - R_CreateImage          x%3d  : %4dms\n", s_createImage_n,          s_createImage_ms );
+}
 #else
-void R_Image_ResetTimingStats( void ) {}
-void R_Image_LogTimingStats( void )  {}
+void R_Image_ResetTimingStats( void )    {}
+void R_Image_LogTimingStats( void )      {}
+void R_Image_LogSubTimingStats( void )   {}
 #endif
 static byte			 s_intensitytable[256];
 static unsigned char s_gammatable[256];
@@ -1100,7 +1111,11 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 		glWrapClampMode = GL_CLAMP_TO_EDGE;
 	}
 
+#if LOAD_LOGGING
+	{ int _t = ri.Milliseconds(); image = R_FindImageFile_NoLoad(name, mipmap, allowPicmip, allowTC, glWrapClampMode ); s_findImageFile_NoLoad_ms += ri.Milliseconds() - _t; s_findImageFile_NoLoad_n++; }
+#else
 	image = R_FindImageFile_NoLoad(name, mipmap, allowPicmip, allowTC, glWrapClampMode );
+#endif
 	if (image) {
 #if LOAD_LOGGING
 		s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
@@ -1125,7 +1140,11 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 		return NULL;
 	}
 
+#if LOAD_LOGGING
+	{ int _t = ri.Milliseconds(); image = R_CreateImage( ( char * ) name, pic, width, height, GL_RGBA, mipmap, allowPicmip, allowTC, glWrapClampMode ); s_createImage_ms += ri.Milliseconds() - _t; s_createImage_n++; }
+#else
 	image = R_CreateImage( ( char * ) name, pic, width, height, GL_RGBA, mipmap, allowPicmip, allowTC, glWrapClampMode );
+#endif
 	R_Free( pic );
 #if LOAD_LOGGING
 	s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
