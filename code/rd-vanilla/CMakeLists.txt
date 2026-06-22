@@ -156,6 +156,9 @@ if(BuildSPRdVanilla OR BuildJK2SPRdVanilla)
 	find_package(OpenMP REQUIRED)
 	set(SPRDVanillaRendererLibraries ${SPRDVanillaRendererLibraries} OpenMP::OpenMP_C)
 
+	find_package(Threads REQUIRED)
+	set(SPRDVanillaRendererLibraries ${SPRDVanillaRendererLibraries} Threads::Threads)
+
 	set(SPRDVanillaRendererIncludeDirectories ${SPRDVanillaRendererIncludeDirectories} ${OpenJKLibDir})
 
 	function(add_sp_renderer_project ProjectName Label EngineName InstallDir Component)

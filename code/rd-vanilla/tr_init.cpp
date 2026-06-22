@@ -142,6 +142,7 @@ cvar_t	*r_debugSurface;
 cvar_t	*r_simpleMipMaps;
 
 cvar_t	*r_showImages;
+cvar_t	*r_warmKejimPostImages;
 
 cvar_t	*r_ambientScale;
 cvar_t	*r_directedScale;
@@ -1473,6 +1474,16 @@ typedef struct consoleCommand_s {
 } consoleCommand_t;
 
 void R_ReloadFonts_f( void );
+static void R_WarmKejimPostImages_f( void )
+{
+	R_ImageWarm_StartKejimPost();
+	ri.Printf( PRINT_ALL, "Started kejim_post image warmer\n" );
+}
+
+static void R_WarmKejimPostImagesStatus_f( void )
+{
+	R_ImageWarm_PrintStatus();
+}
 
 static consoleCommand_t	commands[] = {
 	{ "imagelist",			R_ImageList_f },
@@ -1491,6 +1502,8 @@ static consoleCommand_t	commands[] = {
 	{ "r_fogDistance",		R_FogDistance_f },
 	{ "r_fogColor",			R_FogColor_f },
 	{ "r_reloadfonts",		R_ReloadFonts_f },
+	{ "r_startKejimPostImageWarm",	R_WarmKejimPostImages_f },
+	{ "r_statusKejimPostImageWarm",	R_WarmKejimPostImagesStatus_f },
 };
 
 static const size_t numCommands = ARRAY_LEN( commands );
@@ -1594,6 +1607,7 @@ void R_Register( void )
 	// temporary variables that can change at any time
 	//
 	r_showImages = ri.Cvar_Get( "r_showImages", "0", CVAR_CHEAT );
+	r_warmKejimPostImages = ri.Cvar_Get( "r_warmKejimPostImages", "1", CVAR_ARCHIVE_ND );
 
 	r_debugLight = ri.Cvar_Get( "r_debuglight", "0", CVAR_TEMP );
 	r_debugStyle = ri.Cvar_Get( "r_debugStyle", "-1", CVAR_CHEAT );
@@ -1787,6 +1801,11 @@ RE_Shutdown
 */
 extern void R_ShutdownWorldEffects(void);
 void RE_Shutdown( qboolean destroyWindow, qboolean restarting ) {
+	if ( destroyWindow )
+	{
+		R_ImageWarm_Shutdown();
+	}
+
 	for ( size_t i = 0; i < numCommands; i++ )
 		ri.Cmd_RemoveCommand( commands[i].cmd );
 

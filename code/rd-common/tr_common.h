@@ -59,6 +59,13 @@ qboolean R_ImageLoader_Add( const char *extension, ImageLoaderFn imageLoader );
 // Load an image from file.
 void R_LoadImage( const char *shortname, byte **pic, int *width, int *height );
 
+// Opportunistically pre-decode kejim_post images on a background thread.
+void R_ImageWarm_StartKejimPost( void );
+void R_ImageWarm_Shutdown( void );
+qboolean R_ImageWarm_TakeImage( const char *shortname, byte **pic, int *width, int *height );
+void R_ImageWarm_LogStats( void );
+void R_ImageWarm_PrintStatus( void );
+
 // Load raw image data from TGA image.
 void LoadTGA( const char *name, byte **pic, int *width, int *height );
 

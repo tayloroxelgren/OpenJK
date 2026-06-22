@@ -1209,6 +1209,7 @@ extern	cvar_t	*r_debugSurface;
 extern	cvar_t	*r_simpleMipMaps;
 
 extern	cvar_t	*r_showImages;
+extern	cvar_t	*r_warmKejimPostImages;
 extern	cvar_t	*r_debugSort;
 extern	cvar_t	*r_debugStyle;
 
@@ -1315,7 +1316,7 @@ void		RE_SetWorldVisData( const byte *vis );
 qhandle_t	RE_RegisterModel( const char *name );
 qhandle_t	RE_RegisterSkin( const char *name );
 int			RE_GetAnimationCFG(const char *psCFGFilename, char *psDest, int iDestSize);
-void		RE_Shutdown( qboolean destroyWindow );
+void		RE_Shutdown( qboolean destroyWindow, qboolean restarting );
 
 void		RE_RegisterMedia_LevelLoadBegin(const char *psMapName, ForceReload_e eForceReload, qboolean bAllowScreenDissolve);
 void		RE_RegisterMedia_LevelLoadEnd(void);
@@ -1823,6 +1824,7 @@ void RE_LAGoggles( void );
 void RE_Scissor ( float x, float y, float w, float h);
 void RE_BeginFrame( stereoFrame_t stereoFrame );
 void RE_EndFrame( int *frontEndMsec, int *backEndMsec );
+void R_ImageWarm_DisableAutoStart( void );
 qboolean	RE_ProcessDissolve(void);
 qboolean	RE_InitDissolve(qboolean bForceCircularExtroWipe);
 

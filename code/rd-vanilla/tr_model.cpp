@@ -370,6 +370,7 @@ static qboolean gbAllowScreenDissolve = qtrue;
 //
 void RE_RegisterMedia_LevelLoadBegin(const char *psMapName, ForceReload_e eForceReload, qboolean bAllowScreenDissolve)
 {
+	R_ImageWarm_DisableAutoStart();
 	gbAllowScreenDissolve = bAllowScreenDissolve;
 
 	tr.numBSPModels = 0;

@@ -48,6 +48,7 @@ void R_Image_ResetTimingStats( void ) {
 void R_Image_LogTimingStats( void ) {
 	LoadLog_Append( "  R_FindImageFile   x%3d  : %4dms\n", s_findImageFile_n, s_findImageFile_ms );
 	LoadLog_Append( "    R_LoadImage     x%3d  : %4dms\n", s_loadImage_n,     s_loadImage_ms );
+	R_ImageWarm_LogStats();
 }
 
 void R_Image_LogSubTimingStats( void ) {
@@ -1127,11 +1128,14 @@ image_t	*R_FindImageFile( const char *name, qboolean mipmap, qboolean allowPicmi
 	//
 	// load the pic from disk
 	//
+	if ( !R_ImageWarm_TakeImage( name, &pic, &width, &height ) )
+	{
 #if LOAD_LOGGING
-	{ int _li_t = ri.Milliseconds(); R_LoadImage( name, &pic, &width, &height ); s_loadImage_ms += ri.Milliseconds() - _li_t; s_loadImage_n++; }
+		{ int _li_t = ri.Milliseconds(); R_LoadImage( name, &pic, &width, &height ); s_loadImage_ms += ri.Milliseconds() - _li_t; s_loadImage_n++; }
 #else
-	R_LoadImage( name, &pic, &width, &height );
+		R_LoadImage( name, &pic, &width, &height );
 #endif
+	}
 	if ( !pic ) {
 #if LOAD_LOGGING
 		s_findImageFile_ms += ri.Milliseconds() - _fif_t0;
