@@ -142,7 +142,7 @@ cvar_t	*r_debugSurface;
 cvar_t	*r_simpleMipMaps;
 
 cvar_t	*r_showImages;
-cvar_t	*r_warmKejimPostImages;
+cvar_t	*r_warmMapImages;
 
 cvar_t	*r_ambientScale;
 cvar_t	*r_directedScale;
@@ -1476,8 +1476,8 @@ typedef struct consoleCommand_s {
 void R_ReloadFonts_f( void );
 static void R_WarmKejimPostImages_f( void )
 {
-	R_ImageWarm_StartKejimPost();
-	ri.Printf( PRINT_ALL, "Started kejim_post image warmer\n" );
+	R_ImageWarm_StartMap( "maps/kejim_post.bsp" );
+	ri.Printf( PRINT_ALL, "Started map image warmer for maps/kejim_post.bsp\n" );
 }
 
 static void R_WarmKejimPostImagesStatus_f( void )
@@ -1503,6 +1503,7 @@ static consoleCommand_t	commands[] = {
 	{ "r_fogColor",			R_FogColor_f },
 	{ "r_reloadfonts",		R_ReloadFonts_f },
 	{ "r_startKejimPostImageWarm",	R_WarmKejimPostImages_f },
+	{ "r_statusMapImageWarm",	R_WarmKejimPostImagesStatus_f },
 	{ "r_statusKejimPostImageWarm",	R_WarmKejimPostImagesStatus_f },
 };
 
@@ -1607,7 +1608,7 @@ void R_Register( void )
 	// temporary variables that can change at any time
 	//
 	r_showImages = ri.Cvar_Get( "r_showImages", "0", CVAR_CHEAT );
-	r_warmKejimPostImages = ri.Cvar_Get( "r_warmKejimPostImages", "1", CVAR_ARCHIVE_ND );
+	r_warmMapImages = ri.Cvar_Get( "r_warmMapImages", "1", CVAR_ARCHIVE_ND );
 
 	r_debugLight = ri.Cvar_Get( "r_debuglight", "0", CVAR_TEMP );
 	r_debugStyle = ri.Cvar_Get( "r_debugStyle", "-1", CVAR_CHEAT );

@@ -25,6 +25,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "../server/exe_headers.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <map>
 #include <mutex>
 #include <set>
@@ -54,14 +55,23 @@ struct WarmImageEntry
 	int height;
 };
 
+struct WarmImageJob
+{
+	sstring_t cacheName;
+	sstring_t fileName;
+	std::vector<byte> bytes;
+};
+
 typedef std::map<sstring_t, WarmImageEntry> WarmImageMap_t;
 static WarmImageMap_t s_warmImages;
 static std::vector<sstring_t> s_warmLoadedSamples;
 static std::vector<sstring_t> s_warmMissSamples;
 static std::mutex s_warmImagesMutex;
-static std::thread s_warmThread;
+static std::vector<WarmImageJob> s_warmJobs;
+static std::vector<std::thread> s_warmWorkers;
 static std::atomic<bool> s_warmStop(false);
 static std::atomic<bool> s_warmWorkerDone(true);
+static std::atomic<int> s_warmWorkersRemaining(0);
 static std::atomic<int> s_warmStartMs(0);
 static std::atomic<int> s_warmEndMs(0);
 static std::atomic<int> s_warmDurationMs(0);
@@ -70,14 +80,19 @@ static std::atomic<int> s_warmLoaded(0);
 static std::atomic<int> s_warmFailed(0);
 static std::atomic<int> s_warmHits(0);
 static std::atomic<int> s_warmMisses(0);
-static std::atomic<int> s_warmPriorityQueued(0);
-static std::atomic<int> s_warmPriorityLoaded(0);
-static std::atomic<int> s_warmPriorityFailed(0);
-static std::atomic<bool> s_warmPriorityDone(false);
-static std::atomic<int> s_warmStartupCandidates(0);
 static std::atomic<int> s_warmBspCandidates(0);
 static std::atomic<int> s_warmStageCandidates(0);
-static std::atomic<int> s_warmDirectoryCandidates(0);
+static std::atomic<int> s_warmDecodeThreads(0);
+
+static void *R_ImageWarm_PrivateAlloc( size_t size )
+{
+	return std::malloc( size );
+}
+
+static void R_ImageWarm_PrivateFree( void *ptr )
+{
+	std::free( ptr );
+}
 
 static void R_NormalizeImageLookupName( const char *source, char *dest, size_t destSize )
 {
@@ -116,7 +131,7 @@ static void R_ImageWarm_ClearCache( void )
 	{
 		if ( it->second.pic )
 		{
-			R_Free( it->second.pic );
+			R_ImageWarm_PrivateFree( it->second.pic );
 		}
 	}
 	s_warmImages.clear();
@@ -134,7 +149,7 @@ static void R_ImageWarm_Publish( const char *shortname, byte *pic, int width, in
 	WarmImageMap_t::iterator it = s_warmImages.find( key );
 	if ( it != s_warmImages.end() && it->second.pic )
 	{
-		R_Free( pic );
+		R_ImageWarm_PrivateFree( pic );
 		return;
 	}
 
@@ -147,6 +162,42 @@ static void R_ImageWarm_Publish( const char *shortname, byte *pic, int width, in
 	{
 		s_warmLoadedSamples.push_back( key );
 	}
+}
+
+static qboolean R_ImageWarm_ReadFilePrivate( const char *name, std::vector<byte> &bytes )
+{
+	void *buffer = NULL;
+	long len = 0;
+
+	std::lock_guard<std::mutex> lock( s_imageLoadMutex );
+	len = ri.FS_ReadFile( name, &buffer );
+	if ( len <= 0 || !buffer )
+	{
+		return qfalse;
+	}
+
+	bytes.resize( len );
+	memcpy( &bytes[0], buffer, len );
+	ri.FS_FreeFile( buffer );
+	return qtrue;
+}
+
+static void R_ImageWarm_ListFilesPrivate( const char *directory, const char *extension, std::vector<sstring_t> &files )
+{
+	int numFiles = 0;
+	std::lock_guard<std::mutex> lock( s_imageLoadMutex );
+	char **fileList = ri.FS_ListFiles( directory, extension, &numFiles );
+	if ( !fileList )
+	{
+		return;
+	}
+
+	for ( int i = 0; i < numFiles; i++ )
+	{
+		files.push_back( sstring_t( fileList[i] ) );
+	}
+
+	ri.FS_FreeFileList( fileList );
 }
 
 qboolean R_ImageWarm_TakeImage( const char *shortname, byte **pic, int *width, int *height )
@@ -169,10 +220,37 @@ qboolean R_ImageWarm_TakeImage( const char *shortname, byte **pic, int *width, i
 		return qfalse;
 	}
 
-	*pic = it->second.pic;
+	if ( it->second.width <= 0 || it->second.height <= 0 )
+	{
+		R_ImageWarm_PrivateFree( it->second.pic );
+		s_warmImages.erase( it );
+		s_warmMisses++;
+		return qfalse;
+	}
+
+	const size_t imageSize = (size_t)it->second.width * (size_t)it->second.height * 4;
+	if ( imageSize > 0x7fffffff )
+	{
+		R_ImageWarm_PrivateFree( it->second.pic );
+		s_warmImages.erase( it );
+		s_warmMisses++;
+		return qfalse;
+	}
+
+	byte *handoffPic = (byte *)R_Malloc( (int)imageSize, TAG_TEMP_WORKSPACE, qfalse );
+	if ( !handoffPic )
+	{
+		R_ImageWarm_PrivateFree( it->second.pic );
+		s_warmImages.erase( it );
+		s_warmMisses++;
+		return qfalse;
+	}
+
+	memcpy( handoffPic, it->second.pic, imageSize );
+	R_ImageWarm_PrivateFree( it->second.pic );
+	*pic = handoffPic;
 	*width = it->second.width;
 	*height = it->second.height;
-	it->second.pic = NULL;
 	s_warmImages.erase( it );
 	s_warmHits++;
 	return qtrue;
@@ -180,25 +258,23 @@ qboolean R_ImageWarm_TakeImage( const char *shortname, byte **pic, int *width, i
 
 static void R_ImageWarm_AddBspShaders( const char *mapName, std::set<sstring_t> &images )
 {
-	void *buffer = NULL;
-	const long len = ri.FS_ReadFile( mapName, &buffer );
-	if ( len <= 0 || !buffer )
+	std::vector<byte> bsp;
+	if ( !R_ImageWarm_ReadFilePrivate( mapName, bsp ) )
 	{
 		return;
 	}
 
-	const byte *bytes = (const byte *)buffer;
+	const long len = (long)bsp.size();
+	const byte *bytes = &bsp[0];
 	if ( len < (long)sizeof( dheader_t ) )
 	{
-		ri.FS_FreeFile( buffer );
 		return;
 	}
 
-	const dheader_t *header = (const dheader_t *)buffer;
+	const dheader_t *header = (const dheader_t *)bytes;
 	const int version = LittleLong( header->version );
 	if ( version != BSP_VERSION )
 	{
-		ri.FS_FreeFile( buffer );
 		return;
 	}
 
@@ -209,7 +285,6 @@ static void R_ImageWarm_AddBspShaders( const char *mapName, std::set<sstring_t> 
 		 shaderLump.fileofs + shaderLump.filelen > len ||
 		 shaderLump.filelen % (int)sizeof( dshader_t ) != 0 )
 	{
-		ri.FS_FreeFile( buffer );
 		return;
 	}
 
@@ -229,25 +304,6 @@ static void R_ImageWarm_AddBspShaders( const char *mapName, std::set<sstring_t> 
 			images.insert( sstring_t( name ) );
 		}
 	}
-
-	ri.FS_FreeFile( buffer );
-}
-
-static qboolean R_ImageWarm_DirectoryLooksRelevant( const char *directory )
-{
-	if ( !directory )
-	{
-		return qfalse;
-	}
-
-	if ( !Q_stricmpn( directory, "kejim", 5 ) ||
-		 !Q_stricmpn( directory, "imp", 3 ) ||
-		 !Q_stricmpn( directory, "common", 6 ) )
-	{
-		return qtrue;
-	}
-
-	return qfalse;
 }
 
 static void R_ImageWarm_SkipWhitespaceAndComments( const char **text )
@@ -415,14 +471,14 @@ static void R_ImageWarm_AddShaderStageImagesFromText( const char *text, const st
 
 static void R_ImageWarm_AddShaderStageImages( const std::set<sstring_t> &shaderNames, std::set<sstring_t> &images )
 {
-	int numShaderFiles = 0;
-	char **shaderFiles = ri.FS_ListFiles( "shaders", ".shader", &numShaderFiles );
-	if ( !shaderFiles )
+	std::vector<sstring_t> shaderFiles;
+	R_ImageWarm_ListFilesPrivate( "shaders", ".shader", shaderFiles );
+	if ( shaderFiles.empty() )
 	{
 		return;
 	}
 
-	for ( int i = 0; i < numShaderFiles; i++ )
+	for ( std::vector<sstring_t>::const_iterator it = shaderFiles.begin(); it != shaderFiles.end(); ++it )
 	{
 		if ( s_warmStop.load() )
 		{
@@ -430,124 +486,90 @@ static void R_ImageWarm_AddShaderStageImages( const std::set<sstring_t> &shaderN
 		}
 
 		char filename[MAX_QPATH];
-		char *buffer = NULL;
-		Com_sprintf( filename, sizeof( filename ), "shaders/%s", shaderFiles[i] );
-		ri.FS_ReadFile( filename, (void **)&buffer );
-		if ( buffer )
+		std::vector<byte> shaderText;
+		Com_sprintf( filename, sizeof( filename ), "shaders/%s", it->c_str() );
+		if ( R_ImageWarm_ReadFilePrivate( filename, shaderText ) )
 		{
-			R_ImageWarm_AddShaderStageImagesFromText( buffer, shaderNames, images );
-			ri.FS_FreeFile( buffer );
+			shaderText.push_back( '\0' );
+			R_ImageWarm_AddShaderStageImagesFromText( (const char *)&shaderText[0], shaderNames, images );
+		}
+	}
+}
+
+static qboolean R_ImageWarm_DecodePrivateBuffer( const char *name, std::vector<byte> &bytes, byte **pic, int *width, int *height )
+{
+	const char *extension = COM_GetExtension( name );
+	if ( !Q_stricmp( extension, "jpg" ) || !Q_stricmp( extension, "jpeg" ) )
+	{
+		LoadJPGFromBufferWithAllocator( &bytes[0], bytes.size(), pic, width, height, R_ImageWarm_PrivateAlloc );
+	}
+	else if ( !Q_stricmp( extension, "png" ) )
+	{
+		LoadPNGFromBufferWithAllocator( &bytes[0], bytes.size(), pic, width, height, R_ImageWarm_PrivateAlloc, R_ImageWarm_PrivateFree );
+	}
+	else if ( !Q_stricmp( extension, "tga" ) )
+	{
+		LoadTGAFromBufferWithAllocator( name, &bytes[0], bytes.size(), pic, width, height, R_ImageWarm_PrivateAlloc );
+	}
+
+	return *pic ? qtrue : qfalse;
+}
+
+static qboolean R_ImageWarm_PrepareImageJob( const char *shortname, WarmImageJob &job )
+{
+	char extensionlessName[MAX_QPATH];
+	const char *extension = COM_GetExtension( shortname );
+	const char *tryExtensions[] = { "jpg", "png", "tga" };
+
+	if ( extension && extension[0] )
+	{
+		std::vector<byte> bytes;
+		if ( R_ImageWarm_ReadFilePrivate( shortname, bytes ) )
+		{
+			job.cacheName = sstring_t( shortname );
+			job.fileName = sstring_t( shortname );
+			job.bytes.swap( bytes );
+			return qtrue;
 		}
 	}
 
-	ri.FS_FreeFileList( shaderFiles );
-}
-
-static void R_ImageWarm_AddDirectoryImagesForExtension( const char *directory, const char *extension, std::set<sstring_t> &images )
-{
-	int numFiles = 0;
-	char **files = ri.FS_ListFiles( directory, extension, &numFiles );
-	if ( !files )
+	COM_StripExtension( shortname, extensionlessName, sizeof( extensionlessName ) );
+	for ( size_t i = 0; i < ARRAY_LEN( tryExtensions ); i++ )
 	{
-		return;
-	}
-
-	for ( int i = 0; i < numFiles; i++ )
-	{
-		if ( s_warmStop.load() )
+		if ( extension && extension[0] && !Q_stricmp( extension, tryExtensions[i] ) )
 		{
-			break;
+			continue;
 		}
 
-		char path[MAX_QPATH];
-		Com_sprintf( path, sizeof( path ), "%s/%s", directory, files[i] );
-		images.insert( sstring_t( path ) );
-	}
-
-	ri.FS_FreeFileList( files );
-}
-
-static void R_ImageWarm_AddDirectoryImages( const char *directory, std::set<sstring_t> &images )
-{
-	R_ImageWarm_AddDirectoryImagesForExtension( directory, ".jpg", images );
-	R_ImageWarm_AddDirectoryImagesForExtension( directory, ".png", images );
-	R_ImageWarm_AddDirectoryImagesForExtension( directory, ".tga", images );
-}
-
-static void R_ImageWarm_AddLikelyStartupImages( std::set<sstring_t> &images )
-{
-	static const char *const directories[] =
-	{
-		"levelshots",
-		"gfx/colors",
-		"gfx/effects",
-		"models/weapons2/blaster_r",
-		"models/players/stormtrooper",
-		"models/players/imperial",
-		"models/players/gonk",
-		"models/players/probe",
-		"models/players/jan",
-		"models/map_objects/imp_mine",
-		"textures/common",
-	};
-
-	for ( size_t i = 0; i < ARRAY_LEN( directories ); i++ )
-	{
-		if ( s_warmStop.load() )
+		char name[MAX_QPATH];
+		std::vector<byte> bytes;
+		Com_sprintf( name, sizeof( name ), "%s.%s", extensionlessName, tryExtensions[i] );
+		if ( R_ImageWarm_ReadFilePrivate( name, bytes ) )
 		{
-			break;
+			job.cacheName = sstring_t( shortname );
+			job.fileName = sstring_t( name );
+			job.bytes.swap( bytes );
+			return qtrue;
 		}
-		R_ImageWarm_AddDirectoryImages( directories[i], images );
 	}
+
+	return qfalse;
 }
 
-static void R_ImageWarm_AddPriorityKejimImages( std::vector<sstring_t> &images )
-{
-	static const char *const priorityImages[] =
-	{
-		"levelshots/yavin_temple",
-		"levelshots/kejim_post",
-		"models/weapons2/blaster_r/blaster_w",
-		"models/players/stormtrooper/torso_legs",
-		"models/players/stormtrooper/helmet",
-		"models/players/stormtrooper/shoulder",
-		"models/players/stormtrooper/armor",
-		"textures/common/caps",
-		"textures/common/caps_glow",
-		"models/players/imperial/boots_hips",
-		"models/players/imperial/officer_legs",
-		"models/players/imperial/officer_torso",
-		"models/players/imperial/basic_hand",
-		"models/players/imperial/key",
-		"models/players/imperial/head",
-		"models/players/imperial/face",
-		"models/players/imperial/mouth_eyes",
-		"models/players/gonk/gonk",
-		"models/players/probe/probe_droid",
-		"models/map_objects/imp_mine/turret_cannon_base",
-		"models/map_objects/imp_mine/turret_glow",
-		"gfx/colors/black",
-		"models/map_objects/imp_mine/turret_cannon",
-		"models/players/jan/legs",
-		"models/players/jan/accesories",
-		"models/players/jan/vest",
-	};
-
-	for ( size_t i = 0; i < ARRAY_LEN( priorityImages ); i++ )
-	{
-		images.push_back( sstring_t( priorityImages[i] ) );
-	}
-}
-
-static qboolean R_ImageWarm_LoadCandidate( const char *name )
+static qboolean R_ImageWarm_LoadPreparedCandidate( WarmImageJob &job )
 {
 	byte *pic = NULL;
 	int width = 0;
 	int height = 0;
-	R_LoadImage( name, &pic, &width, &height );
+	R_ImageWarm_DecodePrivateBuffer( job.fileName.c_str(), job.bytes, &pic, &width, &height );
 	if ( pic )
 	{
-		R_ImageWarm_Publish( name, pic, width, height );
+		if ( s_warmStop.load() )
+		{
+			R_ImageWarm_PrivateFree( pic );
+			return qfalse;
+		}
+		R_ImageWarm_Publish( job.cacheName.c_str(), pic, width, height );
 		s_warmLoaded++;
 		return qtrue;
 	}
@@ -564,71 +586,142 @@ static void R_ImageWarm_MarkWorkerDone( int startTime )
 	s_warmWorkerDone = true;
 }
 
-static void R_ImageWarm_AddLikelyKejimTextureDirs( std::set<sstring_t> &images )
+static int R_ImageWarm_GetDecodeThreadCount( size_t jobCount )
 {
-	int numDirs = 0;
-	char **dirs = ri.FS_ListFiles( "textures", "/", &numDirs );
-	if ( !dirs )
+	if ( jobCount == 0 )
 	{
-		return;
+		return 0;
 	}
 
-	for ( int i = 0; i < numDirs; i++ )
+	unsigned int hardwareThreads = std::thread::hardware_concurrency();
+	int decodeThreads = 1;
+	if ( hardwareThreads > 1 )
+	{
+		decodeThreads = (int)hardwareThreads - 1;
+	}
+
+	if ( decodeThreads < 1 )
+	{
+		decodeThreads = 1;
+	}
+	if ( decodeThreads > (int)jobCount )
+	{
+		decodeThreads = (int)jobCount;
+	}
+
+	return decodeThreads;
+}
+
+static void R_ImageWarm_DecodeWorker( std::atomic<size_t> *nextJob )
+{
+	for ( ;; )
 	{
 		if ( s_warmStop.load() )
 		{
 			break;
 		}
-		if ( !R_ImageWarm_DirectoryLooksRelevant( dirs[i] ) )
+
+		const size_t jobIndex = nextJob->fetch_add( 1 );
+		if ( jobIndex >= s_warmJobs.size() )
 		{
-			continue;
+			break;
 		}
 
-		char directory[MAX_QPATH];
-		Com_sprintf( directory, sizeof( directory ), "textures/%s", dirs[i] );
-		R_ImageWarm_AddDirectoryImages( directory, images );
+		R_ImageWarm_LoadPreparedCandidate( s_warmJobs[jobIndex] );
 	}
 
-	ri.FS_FreeFileList( dirs );
+	if ( s_warmWorkersRemaining.fetch_sub( 1 ) == 1 )
+	{
+		R_ImageWarm_MarkWorkerDone( s_warmStartMs.load() );
+	}
 }
 
-static void R_ImageWarm_Worker( void )
+static void R_ImageWarm_StopWorkers( void )
 {
-	const int startTime = ri.Milliseconds();
-	std::set<sstring_t> images;
-	std::set<sstring_t> bspShaders;
-	std::vector<sstring_t> priorityImages;
-	size_t before = 0;
-
-	s_warmStartMs = startTime;
-	R_ImageWarm_AddPriorityKejimImages( priorityImages );
-	s_warmQueued = (int)priorityImages.size();
-	s_warmPriorityQueued = (int)priorityImages.size();
-	for ( std::vector<sstring_t>::const_iterator it = priorityImages.begin(); it != priorityImages.end(); ++it )
+	s_warmStop = true;
+	for ( std::vector<std::thread>::iterator it = s_warmWorkers.begin(); it != s_warmWorkers.end(); ++it )
 	{
-		if ( s_warmStop.load() )
+		if ( it->joinable() )
 		{
-			R_ImageWarm_MarkWorkerDone( startTime );
-			return;
+			it->join();
 		}
+	}
+	s_warmWorkers.clear();
+	s_warmJobs.clear();
+	s_warmWorkersRemaining = 0;
+}
 
-		if ( R_ImageWarm_LoadCandidate( it->c_str() ) )
+static void R_ImageWarm_StartDecodeJobs( const std::set<sstring_t> &images )
+{
+	s_warmJobs.clear();
+	s_warmJobs.reserve( images.size() );
+	for ( std::set<sstring_t>::const_iterator it = images.begin(); it != images.end(); ++it )
+	{
+		WarmImageJob job;
+		if ( R_ImageWarm_PrepareImageJob( it->c_str(), job ) )
 		{
-			s_warmPriorityLoaded++;
+			s_warmJobs.push_back( job );
 		}
 		else
 		{
-			s_warmPriorityFailed++;
+			s_warmFailed++;
 		}
 	}
-	s_warmPriorityDone = true;
+
+	const int decodeThreads = R_ImageWarm_GetDecodeThreadCount( s_warmJobs.size() );
+	s_warmDecodeThreads = decodeThreads;
+	if ( s_warmJobs.empty() )
+	{
+		R_ImageWarm_MarkWorkerDone( s_warmStartMs.load() );
+		return;
+	}
+
+	static std::atomic<size_t> nextJob;
+	nextJob = 0;
+	s_warmWorkersRemaining = decodeThreads;
+	s_warmWorkers.reserve( decodeThreads );
+	for ( int i = 0; i < decodeThreads; i++ )
+	{
+		s_warmWorkers.push_back( std::thread( R_ImageWarm_DecodeWorker, &nextJob ) );
+	}
+}
+
+void R_ImageWarm_StartMap( const char *mapName )
+{
+	if ( !mapName || !mapName[0] )
+	{
+		return;
+	}
+
+	R_ImageWarm_StopWorkers();
+
+	const int startTime = ri.Milliseconds();
+	std::set<sstring_t> images;
+	std::set<sstring_t> bspShaders;
+	size_t before = 0;
+
+	s_warmStop = false;
+	s_warmWorkerDone = false;
+	s_warmStartMs = startTime;
+	s_warmEndMs = 0;
+	s_warmDurationMs = 0;
+	s_warmQueued = 0;
+	s_warmLoaded = 0;
+	s_warmFailed = 0;
+	s_warmHits = 0;
+	s_warmMisses = 0;
+	s_warmBspCandidates = 0;
+	s_warmStageCandidates = 0;
+	s_warmDecodeThreads = 0;
+	R_ImageWarm_ClearCache();
+	{
+		std::lock_guard<std::mutex> lock( s_warmImagesMutex );
+		s_warmLoadedSamples.clear();
+		s_warmMissSamples.clear();
+	}
 
 	before = images.size();
-	R_ImageWarm_AddLikelyStartupImages( images );
-	s_warmStartupCandidates = (int)( images.size() - before );
-
-	before = images.size();
-	R_ImageWarm_AddBspShaders( "maps/kejim_post.bsp", images );
+	R_ImageWarm_AddBspShaders( mapName, images );
 	s_warmBspCandidates = (int)( images.size() - before );
 	for ( std::set<sstring_t>::const_iterator it = images.begin(); it != images.end(); ++it )
 	{
@@ -639,74 +732,13 @@ static void R_ImageWarm_Worker( void )
 	R_ImageWarm_AddShaderStageImages( bspShaders, images );
 	s_warmStageCandidates = (int)( images.size() - before );
 
-	before = images.size();
-	R_ImageWarm_AddLikelyKejimTextureDirs( images );
-	s_warmDirectoryCandidates = (int)( images.size() - before );
-
-	for ( std::vector<sstring_t>::const_iterator it = priorityImages.begin(); it != priorityImages.end(); ++it )
-	{
-		images.erase( R_ImageWarmCacheKey( it->c_str() ) );
-		images.erase( *it );
-	}
-
-	s_warmQueued = (int)( images.size() + priorityImages.size() );
-	for ( std::set<sstring_t>::const_iterator it = images.begin(); it != images.end(); ++it )
-	{
-		if ( s_warmStop.load() )
-		{
-			break;
-		}
-
-		R_ImageWarm_LoadCandidate( it->c_str() );
-	}
-	R_ImageWarm_MarkWorkerDone( startTime );
-}
-
-void R_ImageWarm_StartKejimPost( void )
-{
-	if ( s_warmThread.joinable() )
-	{
-		if ( !s_warmWorkerDone.load() )
-		{
-			return;
-		}
-		s_warmThread.join();
-	}
-
-	s_warmStop = false;
-	s_warmWorkerDone = false;
-	s_warmStartMs = 0;
-	s_warmEndMs = 0;
-	s_warmDurationMs = 0;
-	s_warmQueued = 0;
-	s_warmLoaded = 0;
-	s_warmFailed = 0;
-	s_warmHits = 0;
-	s_warmMisses = 0;
-	s_warmPriorityQueued = 0;
-	s_warmPriorityLoaded = 0;
-	s_warmPriorityFailed = 0;
-	s_warmPriorityDone = false;
-	s_warmStartupCandidates = 0;
-	s_warmBspCandidates = 0;
-	s_warmStageCandidates = 0;
-	s_warmDirectoryCandidates = 0;
-	R_ImageWarm_ClearCache();
-	{
-		std::lock_guard<std::mutex> lock( s_warmImagesMutex );
-		s_warmLoadedSamples.clear();
-		s_warmMissSamples.clear();
-	}
-	s_warmThread = std::thread( R_ImageWarm_Worker );
+	s_warmQueued = (int)images.size();
+	R_ImageWarm_StartDecodeJobs( images );
 }
 
 void R_ImageWarm_Shutdown( void )
 {
-	s_warmStop = true;
-	if ( s_warmThread.joinable() )
-	{
-		s_warmThread.join();
-	}
+	R_ImageWarm_StopWorkers();
 	s_warmWorkerDone = true;
 	R_ImageWarm_ClearCache();
 }
@@ -716,12 +748,12 @@ void R_ImageWarm_LogStats( void )
 #if LOAD_LOGGING
 	LoadLog_Append( "    WarmImageCache queued/loaded/failed/hits/misses: %d/%d/%d/%d/%d\n",
 		s_warmQueued.load(), s_warmLoaded.load(), s_warmFailed.load(), s_warmHits.load(), s_warmMisses.load() );
-	LoadLog_Append( "    WarmImagePriority queued/loaded/failed/done: %d/%d/%d/%d\n",
-		s_warmPriorityQueued.load(), s_warmPriorityLoaded.load(), s_warmPriorityFailed.load(), s_warmPriorityDone.load() ? 1 : 0 );
 	LoadLog_Append( "    WarmImageWorker done/ms: %d/%d\n",
 		s_warmWorkerDone.load() ? 1 : 0, s_warmDurationMs.load() );
-	LoadLog_Append( "    WarmImageSources startup/bsp/stages/dirs: %d/%d/%d/%d\n",
-		s_warmStartupCandidates.load(), s_warmBspCandidates.load(), s_warmStageCandidates.load(), s_warmDirectoryCandidates.load() );
+	LoadLog_Append( "    WarmImageDecodeThreads: %d\n",
+		s_warmDecodeThreads.load() );
+	LoadLog_Append( "    WarmImageSources bsp/stages: %d/%d\n",
+		s_warmBspCandidates.load(), s_warmStageCandidates.load() );
 	{
 		std::lock_guard<std::mutex> lock( s_warmImagesMutex );
 		LoadLog_Append( "    WarmImageCache retained: %d\n", (int)s_warmImages.size() );
@@ -746,11 +778,10 @@ void R_ImageWarm_PrintStatus( void )
 {
 	std::lock_guard<std::mutex> lock( s_warmImagesMutex );
 	ri.Printf( PRINT_ALL,
-		"kejim_post image warmer: queued=%d loaded=%d failed=%d hits=%d misses=%d retained=%d priority=%d/%d failed=%d done=%s workerDone=%s warmMs=%d\n",
+		"map image warmer: queued=%d loaded=%d failed=%d hits=%d misses=%d retained=%d bsp=%d stages=%d decodeThreads=%d workerDone=%s warmMs=%d\n",
 		s_warmQueued.load(), s_warmLoaded.load(), s_warmFailed.load(), s_warmHits.load(), s_warmMisses.load(),
-		(int)s_warmImages.size(), s_warmPriorityLoaded.load(), s_warmPriorityQueued.load(),
-		s_warmPriorityFailed.load(), s_warmPriorityDone.load() ? "yes" : "no", s_warmWorkerDone.load() ? "yes" : "no",
-		s_warmDurationMs.load() );
+		(int)s_warmImages.size(), s_warmBspCandidates.load(), s_warmStageCandidates.load(),
+		s_warmDecodeThreads.load(), s_warmWorkerDone.load() ? "yes" : "no", s_warmDurationMs.load() );
 }
 
 /*

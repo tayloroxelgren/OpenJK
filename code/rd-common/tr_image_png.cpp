@@ -137,12 +137,21 @@ void png_print_warning ( png_structp png_ptr, png_const_charp warning )
 
 bool IsPowerOfTwo ( int i ) { return (i & (i - 1)) == 0; }
 
+static void *LoadPNG_RAlloc( size_t size )
+{
+	return R_Malloc( (int)size, TAG_TEMP_PNG, qfalse );
+}
+
 struct PNGFileReader
 {
-	PNGFileReader ( char *buf ) : buf(buf), offset(0), png_ptr(NULL), info_ptr(NULL) {}
+	PNGFileReader ( byte *buf, bool freeBuffer, ImageBufferAllocFn allocFn, ImageBufferFreeFn freeFn )
+		: buf(buf), freeBuffer(freeBuffer), allocFn(allocFn), freeFn(freeFn), offset(0), png_ptr(NULL), info_ptr(NULL) {}
 	~PNGFileReader()
 	{
-		ri.FS_FreeFile (buf);
+		if ( freeBuffer )
+		{
+			ri.FS_FreeFile (buf);
+		}
 
 		if ( info_ptr != NULL )
 		{
@@ -234,7 +243,7 @@ struct PNGFileReader
 		png_read_update_info (png_ptr, info_ptr);
 
 		// We always assume there are 4 channels. RGB channels are expanded to RGBA when read.
-		byte *tempData = (byte *) R_Malloc (width_ * height_ * 4, TAG_TEMP_PNG, qfalse);
+		byte *tempData = (byte *) allocFn (width_ * height_ * 4);
 		if ( !tempData )
 		{
 			ri.Printf (PRINT_ERROR, "Could not allocate enough memory to load the image.");
@@ -242,12 +251,12 @@ struct PNGFileReader
 		}
 
 		// Dynamic array of row pointers, with 'height' elements, initialized to NULL.
-		byte **row_pointers = (byte **) R_Malloc (sizeof (byte *) * height_, TAG_TEMP_PNG, qfalse);
+		byte **row_pointers = (byte **) allocFn (sizeof (byte *) * height_);
 		if ( !row_pointers )
 		{
 			ri.Printf (PRINT_ERROR, "Could not allocate enough memory to load the image.");
 
-			R_Free (tempData);
+			freeFn (tempData);
 
 			return 0;
 		}
@@ -255,8 +264,8 @@ struct PNGFileReader
 		// Re-set the jmp so that these new memory allocations can be reclaimed
 		if ( setjmp (png_jmpbuf (png_ptr)) )
 		{
-			R_Free (row_pointers);
-			R_Free (tempData);
+			freeFn (row_pointers);
+			freeFn (tempData);
 			return 0;
 		}
 
@@ -270,7 +279,7 @@ struct PNGFileReader
 		// Finish reading
 		png_read_end (png_ptr, NULL);
 
-		R_Free (row_pointers);
+		freeFn (row_pointers);
 
 		// Finally assign all the parameters
 		*data = tempData;
@@ -287,7 +296,10 @@ struct PNGFileReader
 	}
 
 private:
-	char *buf;
+	byte *buf;
+	bool freeBuffer;
+	ImageBufferAllocFn allocFn;
+	ImageBufferFreeFn freeFn;
 	size_t offset;
 	png_structp png_ptr;
 	png_infop info_ptr;
@@ -302,13 +314,34 @@ void user_read_data( png_structp png_ptr, png_bytep data, png_size_t length ) {
 // Loads a PNG image from file.
 void LoadPNG ( const char *filename, byte **data, int *width, int *height )
 {
-	char *buf = NULL;
+	byte *buf = NULL;
 	int len = ri.FS_ReadFile (filename, (void **)&buf);
 	if ( len < 0 || buf == NULL )
 	{
 		return;
 	}
 
-	PNGFileReader reader (buf);
+	PNGFileReader reader (buf, true, LoadPNG_RAlloc, R_Free);
+	reader.Read (data, width, height);
+}
+
+void LoadPNGFromBuffer( byte *inputBuffer, size_t len, byte **data, int *width, int *height )
+{
+	LoadPNGFromBufferWithAllocator( inputBuffer, len, data, width, height, LoadPNG_RAlloc, R_Free );
+}
+
+void LoadPNGFromBufferWithAllocator( byte *inputBuffer, size_t len, byte **data, int *width, int *height, ImageBufferAllocFn allocFn, ImageBufferFreeFn freeFn )
+{
+	if ( !inputBuffer || len < 8 )
+	{
+		return;
+	}
+
+	if ( !allocFn || !freeFn )
+	{
+		return;
+	}
+
+	PNGFileReader reader (inputBuffer, false, allocFn, freeFn);
 	reader.Read (data, width, height);
 }

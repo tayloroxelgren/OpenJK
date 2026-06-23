@@ -55,7 +55,12 @@ typedef struct TGAHeader_s {
 //  returns false if found but had a format error, else true for either OK or not-found (there's a reason for this)
 //
 
-void LoadTGA ( const char *name, byte **pic, int *width, int *height)
+static void *LoadTGA_RAlloc( size_t size )
+{
+	return R_Malloc( (int)size, TAG_TEMP_WORKSPACE, qfalse );
+}
+
+static void LoadTGAFromMemory( const char *name, byte *pTempLoadedBuffer, size_t bufferLen, qboolean freeBuffer, byte **pic, int *width, int *height, ImageBufferAllocFn allocFn )
 {
 	char sErrorString[1024];
 	bool bFormatErrors = false;
@@ -72,12 +77,7 @@ void LoadTGA ( const char *name, byte **pic, int *width, int *height)
 #define TGA_FORMAT_ERROR(blah) {sprintf(sErrorString,blah); bFormatErrors = true; goto TGADone;}
 //#define TGA_FORMAT_ERROR(blah) Com_Error( ERR_DROP, blah );
 
-	//
-	// load the file
-	//
-	byte *pTempLoadedBuffer = 0;
-	ri.FS_ReadFile ( ( char * ) name, (void **)&pTempLoadedBuffer);
-	if (!pTempLoadedBuffer) {
+	if ( !pTempLoadedBuffer || bufferLen < sizeof( TGAHeader_t ) || !allocFn ) {
 		return;
 	}
 
@@ -202,7 +202,11 @@ void LoadTGA ( const char *name, byte **pic, int *width, int *height)
 	if (height)
 		*height = pHeader->wImageHeight;
 
-	pRGBA	= (byte *) R_Malloc (pHeader->wImageWidth * pHeader->wImageHeight * 4, TAG_TEMP_WORKSPACE, qfalse);
+	pRGBA	= (byte *) allocFn (pHeader->wImageWidth * pHeader->wImageHeight * 4);
+	if ( !pRGBA )
+	{
+		goto TGADone;
+	}
 	*pic	= pRGBA;
 	pOut	= pRGBA;
 	pIn		= pTempLoadedBuffer + sizeof(*pHeader);
@@ -375,11 +379,36 @@ void LoadTGA ( const char *name, byte **pic, int *width, int *height)
 
 TGADone:
 
-	ri.FS_FreeFile (pTempLoadedBuffer);
+	if ( freeBuffer )
+	{
+		ri.FS_FreeFile (pTempLoadedBuffer);
+	}
 
 	if (bFormatErrors)
 	{
 		Com_Error( ERR_DROP, "%s( File: \"%s\" )\n",sErrorString,name);
 	}
+}
+
+void LoadTGAFromBuffer( const char *name, byte *inputBuffer, size_t len, byte **pic, int *width, int *height )
+{
+	LoadTGAFromBufferWithAllocator( name, inputBuffer, len, pic, width, height, LoadTGA_RAlloc );
+}
+
+void LoadTGAFromBufferWithAllocator( const char *name, byte *inputBuffer, size_t len, byte **pic, int *width, int *height, ImageBufferAllocFn allocFn )
+{
+	LoadTGAFromMemory( name, inputBuffer, len, qfalse, pic, width, height, allocFn );
+}
+
+void LoadTGA ( const char *name, byte **pic, int *width, int *height)
+{
+	byte *pTempLoadedBuffer = NULL;
+	long len = ri.FS_ReadFile ( ( char * ) name, (void **)&pTempLoadedBuffer);
+	if ( !pTempLoadedBuffer ) {
+		*pic = NULL;
+		return;
+	}
+
+	LoadTGAFromMemory( name, pTempLoadedBuffer, len, qtrue, pic, width, height, LoadTGA_RAlloc );
 }
 

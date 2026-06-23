@@ -51,6 +51,8 @@ float GetNoiseTime( int t );
 void R_ImageLoader_Init();
 
 typedef void (*ImageLoaderFn)( const char *filename, byte **pic, int *width, int *height );
+typedef void *(*ImageBufferAllocFn)( size_t size );
+typedef void (*ImageBufferFreeFn)( void *ptr );
 
 // Adds a new image loader to handle a new image type. The extension should not
 // begin with a period (a full stop).
@@ -59,8 +61,8 @@ qboolean R_ImageLoader_Add( const char *extension, ImageLoaderFn imageLoader );
 // Load an image from file.
 void R_LoadImage( const char *shortname, byte **pic, int *width, int *height );
 
-// Opportunistically pre-decode kejim_post images on a background thread.
-void R_ImageWarm_StartKejimPost( void );
+// Opportunistically pre-decode map images on background decode workers.
+void R_ImageWarm_StartMap( const char *mapName );
 void R_ImageWarm_Shutdown( void );
 qboolean R_ImageWarm_TakeImage( const char *shortname, byte **pic, int *width, int *height );
 void R_ImageWarm_LogStats( void );
@@ -68,17 +70,20 @@ void R_ImageWarm_PrintStatus( void );
 
 // Load raw image data from TGA image.
 void LoadTGA( const char *name, byte **pic, int *width, int *height );
+void LoadTGAFromBuffer( const char *name, byte *inputBuffer, size_t len, byte **pic, int *width, int *height );
+void LoadTGAFromBufferWithAllocator( const char *name, byte *inputBuffer, size_t len, byte **pic, int *width, int *height, ImageBufferAllocFn allocFn );
 
 // Load raw image data from JPEG image.
 void LoadJPG( const char *filename, byte **pic, int *width, int *height );
 
 // Load raw image data from PNG image.
 void LoadPNG( const char *filename, byte **data, int *width, int *height );
+void LoadPNGFromBuffer( byte *inputBuffer, size_t len, byte **data, int *width, int *height );
+void LoadPNGFromBufferWithAllocator( byte *inputBuffer, size_t len, byte **data, int *width, int *height, ImageBufferAllocFn allocFn, ImageBufferFreeFn freeFn );
 
-#ifdef JK2_MODE
 //Load raw image data from JPEG input.
 void LoadJPGFromBuffer( byte *inputBuffer, size_t len, byte **pic, int *width, int *height );
-#endif
+void LoadJPGFromBufferWithAllocator( byte *inputBuffer, size_t len, byte **pic, int *width, int *height, ImageBufferAllocFn allocFn );
 
 /*
 ================================================================================

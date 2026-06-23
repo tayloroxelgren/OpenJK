@@ -226,8 +226,12 @@ void LoadJPG( const char *filename, unsigned char **pic, int *width, int *height
 	/* And we're done! */
 }
 
-#ifdef JK2_MODE
-void LoadJPGFromBuffer( byte *inputBuffer, size_t len, unsigned char **pic, int *width, int *height ) {
+static void *LoadJPG_RAlloc( size_t size )
+{
+	return R_Malloc( (int)size, TAG_TEMP_WORKSPACE, qfalse );
+}
+
+void LoadJPGFromBufferWithAllocator( byte *inputBuffer, size_t len, unsigned char **pic, int *width, int *height, ImageBufferAllocFn allocFn ) {
 	/* This struct contains the JPEG decompression parameters and pointers to
 	 * working space (which is allocated as needed by the JPEG library).
 	 */
@@ -253,7 +257,7 @@ void LoadJPGFromBuffer( byte *inputBuffer, size_t len, unsigned char **pic, int 
 	byte *out;
 	byte  *buf;
 
-	if (!inputBuffer) {
+	if (!inputBuffer || !allocFn) {
 		return;
 	}
 
@@ -323,7 +327,12 @@ void LoadJPGFromBuffer( byte *inputBuffer, size_t len, unsigned char **pic, int 
 	memcount = pixelcount * 4;
 	row_stride = cinfo.output_width * cinfo.output_components;
 
-	out = (byte *)R_Malloc(memcount, TAG_TEMP_WORKSPACE, qfalse);
+	out = (byte *)allocFn(memcount);
+	if ( !out )
+	{
+		jpeg_destroy_decompress(&cinfo);
+		return;
+	}
 
 	*width = cinfo.output_width;
 	*height = cinfo.output_height;
@@ -376,7 +385,10 @@ void LoadJPGFromBuffer( byte *inputBuffer, size_t len, unsigned char **pic, int 
 
 	/* And we're done! */
 }
-#endif
+
+void LoadJPGFromBuffer( byte *inputBuffer, size_t len, unsigned char **pic, int *width, int *height ) {
+	LoadJPGFromBufferWithAllocator( inputBuffer, len, pic, width, height, LoadJPG_RAlloc );
+}
 
 /* Expanded data destination object for stdio output */
 

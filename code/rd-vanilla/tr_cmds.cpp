@@ -27,43 +27,6 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 #include "tr_local.h"
 #include "../rd-common/tr_common.h"
 
-static qboolean s_autoWarmKejimPostStarted = qfalse;
-static int s_autoWarmKejimPostFirstFrameMs = 0;
-
-void R_ImageWarm_DisableAutoStart( void )
-{
-	s_autoWarmKejimPostStarted = qtrue;
-	s_autoWarmKejimPostFirstFrameMs = 0;
-}
-
-static void R_ImageWarm_AutoFrameCheck( void )
-{
-	if ( s_autoWarmKejimPostStarted )
-	{
-		return;
-	}
-
-	if ( !r_warmKejimPostImages || !r_warmKejimPostImages->integer )
-	{
-		return;
-	}
-
-	const int now = ri.Milliseconds();
-	if ( !s_autoWarmKejimPostFirstFrameMs )
-	{
-		s_autoWarmKejimPostFirstFrameMs = now;
-		return;
-	}
-
-	if ( now - s_autoWarmKejimPostFirstFrameMs < 1000 )
-	{
-		return;
-	}
-
-	s_autoWarmKejimPostStarted = qtrue;
-	R_ImageWarm_StartKejimPost();
-}
-
 /*
 =====================
 R_PerformanceCounters
@@ -412,7 +375,6 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 	if ( !tr.registered ) {
 		return;
 	}
-	R_ImageWarm_AutoFrameCheck();
 	glState.finishCalled = qfalse;
 
 	tr.frameCount++;

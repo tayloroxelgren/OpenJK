@@ -1209,7 +1209,7 @@ extern	cvar_t	*r_debugSurface;
 extern	cvar_t	*r_simpleMipMaps;
 
 extern	cvar_t	*r_showImages;
-extern	cvar_t	*r_warmKejimPostImages;
+extern	cvar_t	*r_warmMapImages;
 extern	cvar_t	*r_debugSort;
 extern	cvar_t	*r_debugStyle;
 
@@ -1824,7 +1824,6 @@ void RE_LAGoggles( void );
 void RE_Scissor ( float x, float y, float w, float h);
 void RE_BeginFrame( stereoFrame_t stereoFrame );
 void RE_EndFrame( int *frontEndMsec, int *backEndMsec );
-void R_ImageWarm_DisableAutoStart( void );
 qboolean	RE_ProcessDissolve(void);
 qboolean	RE_InitDissolve(qboolean bForceCircularExtroWipe);
 
