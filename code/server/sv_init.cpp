@@ -205,7 +205,7 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 #if LOAD_LOGGING
 	int			svt0, svt1;
 	sv_loadLogStartMs = Sys_Milliseconds();
-	{ FILE *f = fopen( "loadlog.txt", "w" ); if ( f ) { fprintf( f, "=== LOAD LOG: %s ===\n\n", server ); fclose( f ); } }
+	{ FILE *f = fopen( "loadlog.txt", "a" ); if ( f ) { fprintf( f, "\n=== LOAD LOG: %s ===\n\n", server ); fclose( f ); } }
 #endif
 
 	re.RegisterMedia_LevelLoadBegin( server, eForceReload, bAllowScreenDissolve );
