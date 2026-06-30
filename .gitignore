@@ -199,3 +199,5 @@ cmake-build-*
 # Taylors personal
 taylor-notes/
 install-jk2/
+.claude/
+.agents/
