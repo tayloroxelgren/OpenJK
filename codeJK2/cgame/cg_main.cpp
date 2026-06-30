@@ -27,6 +27,7 @@ along with this program; if not, see <http://www.gnu.org/licenses/>.
 
 #include "../../code/client/vmachine.h"
 
+#include "../../code/qcommon/load_timing.h"
 #include "../../code/qcommon/sstring.h"
 #include "../code/qcommon/ojk_saved_game_helper.h"
 
@@ -654,8 +655,23 @@ static void CG_RegisterSounds( void ) {
 	int		i;
 	char	name[MAX_QPATH];
 	const char	*soundName;
+#if LOAD_LOGGING
+	int soundsTotalStart = cgi_Milliseconds();
+	int soundsSectionStart = soundsTotalStart;
+	int itemSoundCount = 0;
+	int csSoundCount = 0;
+	int customSoundCount = 0;
+
+	LoadLog_Append( "[CG_RegisterSounds breakdown]\n" );
+#endif
 
 	CG_AS_Register();
+
+#if LOAD_LOGGING
+	int soundsNow = cgi_Milliseconds();
+	LoadLog_Append( "  ambient sound sets      : %4dms\n", soundsNow - soundsSectionStart );
+	soundsSectionStart = soundsNow;
+#endif
 
 	CG_LoadingString( "general sounds" );
 
@@ -704,6 +720,12 @@ static void CG_RegisterSounds( void ) {
 	theFxScheduler.RegisterEffect( "turret/explode" );
 	theFxScheduler.RegisterEffect( "spark_exp_nosnd" );
 
+#if LOAD_LOGGING
+	soundsNow = cgi_Milliseconds();
+	LoadLog_Append( "  general/hardcoded      : %4dms\n", soundsNow - soundsSectionStart );
+	soundsSectionStart = soundsNow;
+#endif
+
 	for (i=0 ; i<4 ; i++) {
 		Com_sprintf (name, sizeof(name), "sound/player/footsteps/stone_step%i.wav", i+1);
 		cgs.media.footsteps[FOOTSTEP_NORMAL][i] = cgi_S_RegisterSound (name);
@@ -726,6 +748,12 @@ static void CG_RegisterSounds( void ) {
 	}
 	theFxScheduler.RegisterEffect( "water_impact" );
 
+#if LOAD_LOGGING
+	soundsNow = cgi_Milliseconds();
+	LoadLog_Append( "  footsteps              : %4dms\n", soundsNow - soundsSectionStart );
+	soundsSectionStart = soundsNow;
+#endif
+
 	cg.loadLCARSStage = 1;
 	CG_LoadingString( "item sounds" );
 
@@ -737,9 +765,18 @@ static void CG_RegisterSounds( void ) {
 	for ( i = 1 ; i < bg_numItems ; i++ ) {
 		if ( items[ i ] == '1' )	//even with sound pooling, don't clutter it for low end machines
 		{
+#if LOAD_LOGGING
+			itemSoundCount++;
+#endif
 			CG_RegisterItemSounds( i );
 		}
 	}
+
+#if LOAD_LOGGING
+	soundsNow = cgi_Milliseconds();
+	LoadLog_Append( "  item sounds       x%3d  : %4dms\n", itemSoundCount, soundsNow - soundsSectionStart );
+	soundsSectionStart = soundsNow;
+#endif
 
 	cg.loadLCARSStage = 2;
 	CG_LoadingString( "preregistered sounds" );
@@ -750,13 +787,28 @@ static void CG_RegisterSounds( void ) {
 			break;
 		}
 		if ( soundName[0] == '*' ) {
+#if LOAD_LOGGING
+			customSoundCount++;
+#endif
 			continue;	// custom sound
 		}
-		if (i&31) {
+		// if (i&31) {
+		// 	CG_LoadingString( soundName );
+		// }
+		// Testing loading screen bug
+		if ((i & 31) == 0 ) {
 			CG_LoadingString( soundName );
 		}
+#if LOAD_LOGGING
+		csSoundCount++;
+#endif
 		cgs.sound_precache[i] = cgi_S_RegisterSound( soundName );
 	}
+#if LOAD_LOGGING
+	soundsNow = cgi_Milliseconds();
+	LoadLog_Append( "  CS_SOUNDS         x%3d  : %4dms (%d custom skipped)\n", csSoundCount, soundsNow - soundsSectionStart, customSoundCount );
+	LoadLog_Append( "  CG_RegisterSounds total : %4dms\n", soundsNow - soundsTotalStart );
+#endif
 }
 
 /*
@@ -1204,19 +1256,50 @@ static void CG_RegisterGraphics( void ) {
 		"gfx/2d/numbers/t_minus", //?????
 	};
 
+#if LOAD_LOGGING
+	int gfxTotalStart = cgi_Milliseconds();
+	int gfxSectionStart = gfxTotalStart;
+	int itemVisualCount = 0;
+	int inlineModelCount = 0;
+	int serverModelCount = 0;
+	int serverSkinCount = 0;
+	int clientInfoCount = 0;
+	int entityPrecacheCount = 0;
+
+	LoadLog_Append( "[CG_RegisterGraphics breakdown]\n" );
+#endif
+
 	// Clean, then register...rinse...repeat...
 	CG_LoadingString( "effects" );
 	FX_Init();
 	CG_RegisterEffects();
 
+#if LOAD_LOGGING
+	int gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  effects                : %4dms\n", gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
+
 	// clear any references to old media
 	memset( &cg.refdef, 0, sizeof( cg.refdef ) );
 	cgi_R_ClearScene();
+
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  clear render state     : %4dms\n", gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 	cg.loadLCARSStage = 3;
 	CG_LoadingString( cgs.mapname );
 
 	cgi_R_LoadWorldMap( cgs.mapname );
+
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  cgi_R_LoadWorldMap     : %4dms\n", gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 	cg.loadLCARSStage = 4;
 	CG_LoadingString( "game media shaders" );
@@ -1327,6 +1410,12 @@ static void CG_RegisterGraphics( void ) {
 		ammoTicPos[i].tic = cgi_R_RegisterShaderNoMip( ammoTicPos[i].file );
 	}
 
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  core HUD/media         : %4dms\n", gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
+
 	memset( cg_items, 0, sizeof( cg_items ) );
 	memset( cg_weapons, 0, sizeof( cg_weapons ) );
 
@@ -1338,6 +1427,9 @@ static void CG_RegisterGraphics( void ) {
 		{
 			if (bg_itemlist[i].classname)
 			{
+#if LOAD_LOGGING
+				itemVisualCount++;
+#endif
 				CG_LoadingString( bg_itemlist[i].classname );
 				CG_RegisterItemVisuals( i );
 			}
@@ -1350,6 +1442,12 @@ static void CG_RegisterGraphics( void ) {
 			}
 		}
 	}
+
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  item visuals      x%3d  : %4dms\n", itemVisualCount, gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 	cgi_R_RegisterShader( "gfx/misc/test_crackle" );
 
@@ -1367,6 +1465,12 @@ static void CG_RegisterGraphics( void ) {
 	cgs.media.wakeMarkShader	= cgi_R_RegisterShader( "wake" );
 	cgi_S_RegisterSound( "sound/effects/energy_crackle.wav" );
 
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  HUD marks/extra media  : %4dms\n", gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
+
 
 	CG_LoadingString("map brushes");
 	// register the inline models
@@ -1378,6 +1482,9 @@ static void CG_RegisterGraphics( void ) {
 		int				j;
 
 		Com_sprintf( name, sizeof(name), "*%i", i );
+#if LOAD_LOGGING
+		inlineModelCount++;
+#endif
 		cgs.inlineDrawModel[i] = cgi_R_RegisterModel( name );
 		cgi_R_ModelBounds( cgs.inlineDrawModel[i], mins, maxs );
 		for ( j = 0 ; j < 3 ; j++ ) {
@@ -1395,9 +1502,18 @@ static void CG_RegisterGraphics( void ) {
 		if ( !modelName[0] ) {
 			break;
 		}
+#if LOAD_LOGGING
+		serverModelCount++;
+#endif
 		cgs.model_draw[i] = cgi_R_RegisterModel( modelName );
 //		OutputDebugString(va("### CG_RegisterGraphics(): cgs.model_draw[%d] = \"%s\"\n",i,modelName));
 	}
+
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  inline/server models x%3d/%3d: %4dms\n", inlineModelCount, serverModelCount, gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 	cg.loadLCARSStage = 8;
 
@@ -1413,8 +1529,17 @@ Ghoul2 Insert Start
 		if ( !modelName[0] ) {
 			break;
 		}
+#if LOAD_LOGGING
+		serverSkinCount++;
+#endif
 		cgs.skins[i] = cgi_R_RegisterSkin( modelName );
 	}
+
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  server skins      x%3d  : %4dms\n", serverSkinCount, gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 /*
 Ghoul2 Insert End
@@ -1431,6 +1556,9 @@ Ghoul2 Insert End
 		}
 
 		//feedback( va("client %i", i ) );
+#if LOAD_LOGGING
+		clientInfoCount++;
+#endif
 		CG_NewClientinfo( i );
 	}
 
@@ -1444,6 +1572,9 @@ Ghoul2 Insert End
 				//We presume this
 				{
 					CG_LoadingString( va("client %s", g_entities[i].client->clientInfo.name ) );
+#if LOAD_LOGGING
+					entityPrecacheCount++;
+#endif
 					CG_RegisterClientModels(i);
 					if ( i != 0 )
 					{//Client weapons already precached
@@ -1457,11 +1588,19 @@ Ghoul2 Insert End
 			{//Precache the NPC_type
 				//FIXME: make sure we didn't precache this NPC_type already
 				CG_LoadingString( va("NPC %s", g_entities[i].NPC_type ) );
+#if LOAD_LOGGING
+				entityPrecacheCount++;
+#endif
 				NPC_Precache( &g_entities[i] );
 			}
 		}
 	}
 
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  clients/NPC precache x%3d/%3d: %4dms\n", clientInfoCount, entityPrecacheCount, gfxNow - gfxSectionStart );
+	gfxSectionStart = gfxNow;
+#endif
 
 	cg.loadLCARSStage = 9;
 
@@ -1475,6 +1614,11 @@ Ghoul2 Insert End
 		cgi_R_RegisterShader( "gfx/misc/nav_arrow" );
 		cgi_R_RegisterShader( "gfx/misc/nav_node" );
 	}
+#if LOAD_LOGGING
+	gfxNow = cgi_Milliseconds();
+	LoadLog_Append( "  buildscript extras     : %4dms\n", gfxNow - gfxSectionStart );
+	LoadLog_Append( "  CG_RegisterGraphics total: %4dms\n", gfxNow - gfxTotalStart );
+#endif
 }
 
 //===========================================================================
@@ -1542,6 +1686,13 @@ int gi_cg_inventorySelect;
 
 
 static void CG_GameStateReceived( void ) {
+#if LOAD_LOGGING
+	int cgGameStateTotalStart = cgi_Milliseconds();
+	int cgGameStateSectionStart = cgGameStateTotalStart;
+
+	LoadLog_Append( "[CG_GameStateReceived breakdown]\n" );
+#endif
+
 	// clear everything
 
 	extern void CG_ClearAnimSndCache( void );
@@ -1597,6 +1748,12 @@ Ghoul2 Insert End
 	// get the rendering configuration from the client system
 	cgi_GetGlconfig( &cgs.glconfig );
 
+#if LOAD_LOGGING
+	int cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  reset/link cgame state : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
+
 /*	cgs.charScale = cgs.glconfig.vidHeight * (1.0/480.0);
 	if ( cgs.glconfig.vidWidth * 480 > cgs.glconfig.vidHeight * 640 ) {
 		// wide screen
@@ -1612,16 +1769,45 @@ Ghoul2 Insert End
 
 	CG_ParseServerinfo();
 
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  gamestate/serverinfo   : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
+
 	// load the new map
 	cgs.media.levelLoad = cgi_R_RegisterShaderNoMip( "gfx/hud/mp_levelload" );
 	CG_LoadingString( "collision map" );
 
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  level-load UI setup    : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
+
 	cgi_CM_LoadMap( cgs.mapname, qfalse );
+
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  cgi_CM_LoadMap         : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
 
 	CG_RegisterSounds();
 
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_RegisterSounds      : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
+
 	CG_RegisterGraphics();
 
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_RegisterGraphics    : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
 
 	//jfm: moved down to preinit
 //	CG_InitLocalEntities();
@@ -1629,12 +1815,24 @@ Ghoul2 Insert End
 
 	CG_StartMusic( qfalse );
 
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_StartMusic          : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	cgGameStateSectionStart = cgGameStateNow;
+#endif
+
 	// remove the last loading update
 	cg.infoScreenText[0] = 0;
 
 	CGCam_Init();
 
 	CG_ClearLightStyles();
+
+#if LOAD_LOGGING
+	cgGameStateNow = cgi_Milliseconds();
+	LoadLog_Append( "  post-media cgame setup : %4dms\n", cgGameStateNow - cgGameStateSectionStart );
+	LoadLog_Append( "  CG_GameStateReceived total: %4dms\n", cgGameStateNow - cgGameStateTotalStart );
+#endif
 
 }
 
@@ -1727,6 +1925,13 @@ Called after every level change or subsystem restart
 =================
 */
 void CG_Init( int serverCommandSequence ) {
+#if LOAD_LOGGING
+	int cgInitTotalStart = cgi_Milliseconds();
+	int cgInitSectionStart = cgInitTotalStart;
+
+	LoadLog_Append( "[CG_Init breakdown]\n" );
+#endif
+
 	cgs.serverCommandSequence = serverCommandSequence;
 
 	cgi_Cvar_Set( "cg_drawHUD", "1" );
@@ -1773,12 +1978,30 @@ void CG_Init( int serverCommandSequence ) {
 
 	cg.loadLCARSStage		= 0;
 
+#if LOAD_LOGGING
+	int cgInitNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_Init pre-gamestate  : %4dms\n", cgInitNow - cgInitSectionStart );
+	cgInitSectionStart = cgInitNow;
+#endif
+
 	CG_GameStateReceived();
+
+#if LOAD_LOGGING
+	cgInitNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_GameStateReceived call: %4dms\n", cgInitNow - cgInitSectionStart );
+	cgInitSectionStart = cgInitNow;
+#endif
 
 	CG_InitConsoleCommands();
 
 	cg.missionInfoFlashTime = 0;
 	cg.missionStatusShow = qfalse;
+
+#if LOAD_LOGGING
+	cgInitNow = cgi_Milliseconds();
+	LoadLog_Append( "  CG_Init post-gamestate : %4dms\n", cgInitNow - cgInitSectionStart );
+	LoadLog_Append( "  CG_Init total          : %4dms\n", cgInitNow - cgInitTotalStart );
+#endif
 
 }
 

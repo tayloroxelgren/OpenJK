@@ -206,16 +206,29 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	int			svt0, svt1;
 	sv_loadLogStartMs = Sys_Milliseconds();
 	{ FILE *f = fopen( "loadlog.txt", "a" ); if ( f ) { fprintf( f, "\n=== LOAD LOG: %s ===\n\n", server ); fclose( f ); } }
+	LoadLog_Append( "[Server]\n" );
+	svt0 = Sys_Milliseconds();
 #endif
 
 	re.RegisterMedia_LevelLoadBegin( server, eForceReload, bAllowScreenDissolve );
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  re.LevelLoadBegin       : %4dms\n", svt1 - svt0 );
+#endif
 
 
 	Cvar_SetValue( "cl_paused", 0 );
 	Cvar_Set( "timescale", "1" );//jic we were skipping
 
 	// shut down the existing game if it is running
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	SV_ShutdownGameProgs(qtrue);
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  SV_ShutdownGameProgs    : %4dms\n", svt1 - svt0 );
+#endif
 
 	Com_Printf ("------ Server Initialization ------\n%s\n", com_version->string);
 	Com_Printf ("Server: %s\n",server);
@@ -228,7 +241,15 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	}
 
 	// don't let sound stutter and dump all stuff on the hunk
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	CL_MapLoading();
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  CL_MapLoading/flush     : %4dms\n", svt1 - svt0 );
+	svt0 = Sys_Milliseconds();
+#endif
 
 	if (!CM_SameMap(server))
 	{ //rww - only clear if not loading the same map
@@ -253,6 +274,11 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	// This frees, then allocates. Make it the last thing before other
 	// allocations begin!
 	Cvar_Defrag();
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  map/memory reset        : %4dms\n", svt1 - svt0 );
+	svt0 = Sys_Milliseconds();
+#endif
 
 /*
 		This is useful for debugging memory fragmentation.  Please don't
@@ -296,6 +322,10 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 
 	sv.time = 1000;
 	re.G2API_SetTime(sv.time,G2T_SV_TIME);
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  server struct setup     : %4dms\n", svt1 - svt0 );
+#endif
 
 #if LOAD_LOGGING
 	svt0 = Sys_Milliseconds();
@@ -303,8 +333,8 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	CM_LoadMap( va("maps/%s.bsp", server), qfalse, &checksum, qfalse );
 #if LOAD_LOGGING
 	svt1 = Sys_Milliseconds();
-	LoadLog_Append( "[Server]\n" );
 	LoadLog_Append( "  CM_LoadMap              : %4dms\n", svt1 - svt0 );
+	svt0 = Sys_Milliseconds();
 #endif
 
 	// set serverinfo visible name
@@ -323,6 +353,10 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	// the loading stage, so connected clients don't have
 	// to load during actual gameplay
 	sv.state = SS_LOADING;
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  post-CM server state    : %4dms\n", svt1 - svt0 );
+#endif
 
 	// load and spawn all other entities
 #if LOAD_LOGGING
@@ -348,10 +382,20 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	LoadLog_Append( "  settle frames (x4)      : %4dms\n", svt1 - svt0 );
 #endif
 #ifndef JK2_MODE
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	ge->ConnectNavs(sv_mapname->string, sv_mapChecksum->integer);
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  ge->ConnectNavs         : %4dms\n", svt1 - svt0 );
+#endif
 #endif
 
 	// create a baseline for more efficient communications
+#if LOAD_LOGGING
+	svt0 = Sys_Milliseconds();
+#endif
 	SV_CreateBaseline ();
 
 	for (i=0 ; i<1 ; i++) {
@@ -376,6 +420,10 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 			}
 		}
 	}
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  baseline/client reconnect: %4dms\n", svt1 - svt0 );
+#endif
 
 	// run another frame to allow things to look at all connected clients
 #if LOAD_LOGGING
@@ -387,7 +435,7 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 #if LOAD_LOGGING
 	svt1 = Sys_Milliseconds();
 	LoadLog_Append( "  final settle frame      : %4dms\n", svt1 - svt0 );
-	LoadLog_Append( "  SV_SpawnServer total    : %4dms\n\n", Sys_Milliseconds() - sv_loadLogStartMs );
+	svt0 = Sys_Milliseconds();
 #endif
 
 	// save systeminfo and serverinfo strings
@@ -406,6 +454,11 @@ void SV_SpawnServer( const char *server, ForceReload_e eForceReload, qboolean bA
 	Z_Validate();
 	Z_Validate();
 	Z_Validate();
+#if LOAD_LOGGING
+	svt1 = Sys_Milliseconds();
+	LoadLog_Append( "  final publish/mark      : %4dms\n", svt1 - svt0 );
+	LoadLog_Append( "  SV_SpawnServer total    : %4dms\n\n", Sys_Milliseconds() - sv_loadLogStartMs );
+#endif
 
 	Com_Printf ("-----------------------------------\n");
 }
