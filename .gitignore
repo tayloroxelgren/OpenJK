@@ -194,3 +194,8 @@ compile_commands.json
 #############
 [Bb]uild*/
 cmake-build-*
+
+
+# Taylors personal
+taylor-notes/
+install-jk2/
